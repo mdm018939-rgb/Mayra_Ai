@@ -33,22 +33,6 @@ android {
       keyAlias = "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
-    create("debugConfig") {
-      val ksFile = file("${rootDir}/debug.keystore")
-      val base64Ks = file("${rootDir}/debug.keystore.base64")
-      if (!ksFile.exists() && base64Ks.exists()) {
-        try {
-          val decoded = Base64.getDecoder().decode(base64Ks.readText().trim())
-          ksFile.writeBytes(decoded)
-        } catch (e: Exception) {
-          // ignore
-        }
-      }
-      storeFile = ksFile
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
-    }
   }
 
   buildTypes {
@@ -61,9 +45,6 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
-      // AI Studio.
-      signingConfig = signingConfigs.getByName("debugConfig")
     }
   }
   compileOptions {
