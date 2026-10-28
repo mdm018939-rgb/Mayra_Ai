@@ -424,16 +424,13 @@ class MairaVoiceService : Service() {
         if (!android.provider.Settings.canDrawOverlays(this)) return
         try {
             windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val sizeDp = when (prefsManager.getOverlaySize()) {
-                "small" -> 110
-                "large" -> 170
-                else -> 140
-            }
-            val density = resources.displayMetrics.density
-            val sizePx = (sizeDp * density).toInt()
+            val displayMetrics = resources.displayMetrics
+            val screenHeightPx = displayMetrics.heightPixels
+            val heightPx = (screenHeightPx * 0.22f).toInt().coerceAtLeast(200)
+            val widthPx = (heightPx * 0.65f).toInt() // Proportional width for standing figure
 
             val params = WindowManager.LayoutParams(
-                sizePx, sizePx,
+                widthPx, heightPx,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT

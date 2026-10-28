@@ -18,21 +18,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import com.example.api.GeminiImageClient
 import com.example.api.GroqChatClient
 import com.example.data.EncryptedPreferencesManager
-import com.example.data.MairaLogger
 import com.example.data.db.AppDatabase
 import com.example.data.db.ChatMessageEntity
-import com.example.data.db.TriggerEntity
 import com.example.personality.PersonalityPrompts
 import com.example.service.MairaVoiceService
 import com.example.tools.DeviceToolExecutor
 import com.example.ui.components.MairaBottomBar
 import com.example.ui.screens.*
 import com.example.ui.theme.MairaTheme
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -51,7 +48,7 @@ class MainActivity : ComponentActivity() {
         toolExecutor = DeviceToolExecutor(this)
 
         setContent {
-            val themeMode by remember { mutableStateOf(prefsManager.getThemeMode()) }
+            val themeMode by prefsManager.themeModeFlow.collectAsState()
 
             MairaTheme(themeMode = themeMode) {
                 Surface(
@@ -119,16 +116,16 @@ fun MairaAppContent(
     val triggersList by database.triggerDao().getAllTriggers()
         .collectAsState(initial = emptyList())
 
-    val userNickname = prefsManager.getNickname()
+    // Reactive Preference Flows
+    val userNickname by prefsManager.nicknameFlow.collectAsState()
+    val groqKeys by prefsManager.groqKeysFlow.collectAsState()
     val geminiKey = prefsManager.getGeminiKey()
-    val groqKeys = prefsManager.getGroqKeys()
 
     val hasKeys = geminiKey.isNotBlank() || groqKeys.isNotEmpty()
 
-    val groqClient = remember(groqKeys, geminiKey, prefsManager.getPersonality()) {
+    val groqClient = remember(groqKeys, geminiKey, prefsManager.getPersonality(), userNickname) {
         val personality = prefsManager.getPersonality()
-        val nickname = prefsManager.getNickname()
-        val sysPrompt = PersonalityPrompts.getSystemInstruction(personality, nickname)
+        val sysPrompt = PersonalityPrompts.getSystemInstruction(personality, userNickname)
         GroqChatClient(groqKeys, geminiKey, sysPrompt)
     }
 
@@ -328,6 +325,13 @@ fun MairaAppContent(
 
                 "nickname" -> NicknameScreen(
                     prefsManager = prefsManager,
+                    onReconnectVoiceSession = {
+                        scope.launch {
+                            onStopVoiceService()
+                            delay(800)
+                            onStartVoiceService()
+                        }
+                    },
                     onBack = { currentScreen = "settings" }
                 )
 

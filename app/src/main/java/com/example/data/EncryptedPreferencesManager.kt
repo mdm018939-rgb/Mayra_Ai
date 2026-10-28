@@ -5,6 +5,9 @@ import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -14,6 +17,15 @@ import javax.crypto.spec.GCMParameterSpec
 class EncryptedPreferencesManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("maira_secure_prefs", Context.MODE_PRIVATE)
     private val keyAlias = "maira_master_key"
+
+    private val _themeModeFlow = MutableStateFlow(getThemeMode())
+    val themeModeFlow: StateFlow<String> = _themeModeFlow.asStateFlow()
+
+    private val _nicknameFlow = MutableStateFlow(getNickname())
+    val nicknameFlow: StateFlow<String> = _nicknameFlow.asStateFlow()
+
+    private val _groqKeysFlow = MutableStateFlow(getGroqKeys())
+    val groqKeysFlow: StateFlow<List<String>> = _groqKeysFlow.asStateFlow()
 
     init {
         ensureKey()
@@ -105,7 +117,7 @@ class EncryptedPreferencesManager(context: Context) {
         MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "Gemini key মুছে ফেলা হয়েছে")
     }
 
-    // Groq API Keys (comma-separated list)
+    // Groq API Keys List
     fun getGroqKeys(): List<String> {
         val enc = prefs.getString("groq_keys_enc", "") ?: ""
         val raw = decrypt(enc)
@@ -113,36 +125,67 @@ class EncryptedPreferencesManager(context: Context) {
         return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
     }
 
+    fun addGroqKey(newKey: String): Boolean {
+        val cleanKey = newKey.trim()
+        if (cleanKey.isBlank()) return false
+        val currentList = getGroqKeys().toMutableList()
+        if (!currentList.contains(cleanKey)) {
+            currentList.add(cleanKey)
+            saveGroqKeysList(currentList)
+            val last4 = if (cleanKey.length >= 4) cleanKey.takeLast(4) else "XXXX"
+            MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "নতুন Groq key যোগ করা হয়েছে (...$last4)")
+            return true
+        }
+        return false
+    }
+
+    fun removeGroqKey(keyToRemove: String) {
+        val currentList = getGroqKeys().toMutableList()
+        if (currentList.remove(keyToRemove)) {
+            saveGroqKeysList(currentList)
+            MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "Groq key মুছে ফেলা হয়েছে")
+        }
+    }
+
     fun setGroqKeys(keysCsv: String) {
-        val enc = encrypt(keysCsv.trim())
+        val list = keysCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        saveGroqKeysList(list)
+    }
+
+    private fun saveGroqKeysList(list: List<String>) {
+        val csv = list.joinToString(",")
+        val enc = encrypt(csv)
         prefs.edit().putString("groq_keys_enc", enc).apply()
-        val count = getGroqKeys().size
-        MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "Groq key(s) সংরক্ষণ করা হয়েছে ($count টি)")
+        _groqKeysFlow.value = list
     }
 
     fun clearGroqKeys() {
         prefs.edit().remove("groq_keys_enc").apply()
-        MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "Groq key(s) মুছে ফেলা হয়েছে")
+        _groqKeysFlow.value = emptyList()
+        MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "সকল Groq key মুছে ফেলা হয়েছে")
     }
 
     // User Nickname
     fun getNickname(): String = prefs.getString("user_nickname", "") ?: ""
     fun setNickname(name: String) {
-        prefs.edit().putString("user_nickname", name.trim()).apply()
-        MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "ডাকনাম পরিবর্তন: $name")
+        val cleanName = name.trim()
+        prefs.edit().putString("user_nickname", cleanName).apply()
+        _nicknameFlow.value = cleanName
+        MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "ডাকনাম পরিবর্তন: $cleanName")
     }
 
-    // Personality ("রোমান্টিক সঙ্গী (বউ মোড)" is default)
+    // Personality
     fun getPersonality(): String = prefs.getString("selected_personality", "রোমান্টিক সঙ্গী (বউ মোড)") ?: "রোমান্টিক সঙ্গী (বউ মোড)"
     fun setPersonality(personality: String) {
         prefs.edit().putString("selected_personality", personality).apply()
         MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "পারসোনালিটি পরিবর্তন: $personality")
     }
 
-    // Theme Choice ("light", "dark", "system")
+    // Theme Choice
     fun getThemeMode(): String = prefs.getString("theme_mode", "light") ?: "light"
     fun setThemeMode(mode: String) {
         prefs.edit().putString("theme_mode", mode).apply()
+        _themeModeFlow.value = mode
         MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "থিম পরিবর্তন: $mode")
     }
 
@@ -153,13 +196,7 @@ class EncryptedPreferencesManager(context: Context) {
         MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "ভাসমান মেয়ে সুইচ: $enabled")
     }
 
-    fun getOverlaySize(): String = prefs.getString("overlay_size", "medium") ?: "medium"
-    fun setOverlaySize(size: String) {
-        prefs.edit().putString("overlay_size", size).apply()
-        MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "ভাসমান মেয়ের সাইজ: $size")
-    }
-
-    // Messaging Automation: "Ask before sending" switch (default ON)
+    // Messaging Automation
     fun isAskBeforeSending(): Boolean = prefs.getBoolean("ask_before_sending", true)
     fun setAskBeforeSending(ask: Boolean) {
         prefs.edit().putBoolean("ask_before_sending", ask).apply()

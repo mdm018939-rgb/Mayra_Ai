@@ -28,7 +28,6 @@ fun OverlaySettingsScreen(
 ) {
     val context = LocalContext.current
     var isEnabled by remember { mutableStateOf(prefsManager.isOverlayEnabled()) }
-    var selectedSize by remember { mutableStateOf(prefsManager.getOverlaySize()) }
 
     Column(
         modifier = modifier
@@ -65,16 +64,24 @@ fun OverlaySettingsScreen(
 
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(22.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(18.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("ভাসমান মেয়ে চালু করুন", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("ভাসমান মেয়ে চালু করুন", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "ফোনের যেকোনো স্ক্রিনে মাইরাকে ভাসিয়ে রাখুন।",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
                     Switch(
                         checked = isEnabled,
                         onCheckedChange = { checked ->
@@ -97,21 +104,22 @@ fun OverlaySettingsScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                Text("অ্যাভাটার সাইজ:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val sizes = listOf(Pair("small", "ছোট"), Pair("medium", "মাঝারি"), Pair("large", "বড়"))
-                    sizes.forEach { (key, label) ->
-                        FilterChip(
-                            selected = selectedSize == key,
-                            onClick = {
-                                selectedSize = key
-                                prefsManager.setOverlaySize(key)
-                            },
-                            label = { Text(label) }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "💡 অ্যাভাটার সাইজ স্বয়ংক্রিয়ভাবে স্ক্রিনের উচ্চতার ২২% অনুপাতে যেকোনো ডিসপ্লেতে নিখুঁতভাবে প্রদর্শিত হবে।",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }

@@ -20,14 +20,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.api.GeminiLiveWebSocketClient
 import com.example.api.GroqChatClient
+import com.example.api.GroqModelResolver
 import com.example.data.EncryptedPreferencesManager
+import com.example.ui.components.MairaResultDialog
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,15 +43,17 @@ fun ConnectionsScreen(
 
     var geminiKeyInput by remember { mutableStateOf(prefsManager.getGeminiKey()) }
     var showGeminiKey by remember { mutableStateOf(false) }
-    var geminiTestStatus by remember { mutableStateOf<String?>(null) }
     var isTestingGemini by remember { mutableStateOf(false) }
 
-    var groqKeysInput by remember { mutableStateOf(prefsManager.getGroqKeys().joinToString(", ")) }
-    var groqTestStatus by remember { mutableStateOf<String?>(null) }
-    var isTestingGroq by remember { mutableStateOf(false) }
+    var showAddGroqDialog by remember { mutableStateOf(false) }
+    var newGroqKeyInput by remember { mutableStateOf("") }
+    var isTestingGroqKey by remember { mutableStateOf<String?>(null) }
+
+    // Dialog State
+    var resultDialogData by remember { mutableStateOf<ResultDialogData?>(null) }
 
     val currentGeminiKey = prefsManager.getGeminiKey()
-    val currentGroqKeys = prefsManager.getGroqKeys()
+    val groqKeysList by prefsManager.groqKeysFlow.collectAsState()
 
     Column(
         modifier = modifier
@@ -140,8 +143,12 @@ fun ConnectionsScreen(
 
                 Button(
                     onClick = {
-                        prefsManager.setGeminiKey(geminiKeyInput)
-                        geminiTestStatus = "Gemini Key সফলভাবে সংরক্ষণ করা হয়েছে।"
+                        if (geminiKeyInput.isNotBlank()) {
+                            prefsManager.setGeminiKey(geminiKeyInput)
+                            resultDialogData = ResultDialogData("সফল", "Gemini Key সফলভাবে সংরক্ষণ করা হয়েছে।", false)
+                        } else {
+                            resultDialogData = ResultDialogData("ভুল ইনপুট", "দয়া করে একটি সঠিক Gemini API Key ইনপুট দিন।", true)
+                        }
                     },
                     modifier = Modifier.fillMaxWidth().testTag("save_gemini_key_button"),
                     shape = RoundedCornerShape(20.dp)
@@ -157,14 +164,18 @@ fun ConnectionsScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
+                            val keyToTest = currentGeminiKey.ifBlank { geminiKeyInput }
+                            if (keyToTest.isBlank()) {
+                                resultDialogData = ResultDialogData("পরীক্ষা ব্যর্থ", "পরীক্ষা করার জন্য প্রথমে একটি Gemini Key দিন।", true)
+                                return@OutlinedButton
+                            }
                             isTestingGemini = true
-                            geminiTestStatus = "Gemini Live সংযোগ পরীক্ষা করা হচ্ছে..."
                             val client = GeminiLiveWebSocketClient(
-                                apiKey = currentGeminiKey.ifBlank { geminiKeyInput },
+                                apiKey = keyToTest,
                                 systemInstruction = "Test connection",
                                 listener = object : GeminiLiveWebSocketClient.LiveEventListener {
                                     override fun onSetupComplete() {
-                                        geminiTestStatus = "সফল: Gemini Live সংযোগ ঠিক আছে! ✓"
+                                        resultDialogData = ResultDialogData("সংযোগ সফল", "Gemini Live API সংযোগ ঠিকমতো কাজ করছে! ✓", false)
                                         isTestingGemini = false
                                     }
                                     override fun onAudioDataReceived(pcm24kBytes: ByteArray) {}
@@ -174,7 +185,7 @@ fun ConnectionsScreen(
                                     override fun onTurnComplete() {}
                                     override fun onToolCall(id: String, name: String, args: org.json.JSONObject) {}
                                     override fun onError(errorMessage: String) {
-                                        geminiTestStatus = "ব্যর্থ: $errorMessage"
+                                        resultDialogData = ResultDialogData("সংযোগ ব্যর্থ", "Gemini Live সংযোগ ব্যর্থ: $errorMessage", true)
                                         isTestingGemini = false
                                     }
                                     override fun onClosed(code: Int, reason: String) {
@@ -186,6 +197,10 @@ fun ConnectionsScreen(
                         },
                         enabled = !isTestingGemini
                     ) {
+                        if (isTestingGemini) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
                         Text("সংযোগ পরীক্ষা করুন")
                     }
 
@@ -193,16 +208,11 @@ fun ConnectionsScreen(
                         onClick = {
                             prefsManager.clearGeminiKey()
                             geminiKeyInput = ""
-                            geminiTestStatus = "Gemini key মুছে ফেলা হয়েছে।"
+                            resultDialogData = ResultDialogData("মুছে ফেলা হয়েছে", "Gemini key সফলভাবে মুছে ফেলা হয়েছে।", false)
                         }
                     ) {
                         Text("মুছে ফেলুন", color = MaterialTheme.colorScheme.error)
                     }
-                }
-
-                if (geminiTestStatus != null) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(geminiTestStatus!!, fontSize = 12.sp, style = MaterialTheme.typography.bodyMedium)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -225,7 +235,7 @@ fun ConnectionsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Card 2: Groq Keys (Chat)
+        // Card 2: Groq Keys (Chat) List
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(22.dp),
@@ -239,85 +249,99 @@ fun ConnectionsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("চ্যাট - Groq keys", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("দ্রুত লেখা উত্তর। একাধিক key কমা দিয়ে আলাদা করে দিতে পারো।", style = MaterialTheme.typography.bodyMedium, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        Text("একটির রেট লিমিট শেষ হলে পরেরটি পালা করে চলবে।", style = MaterialTheme.typography.bodyMedium, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
 
-                    val count = currentGroqKeys.size
                     SuggestionChip(
                         onClick = {},
-                        label = { Text("$count টি সংরক্ষিত", fontSize = 11.sp) }
+                        label = { Text("${groqKeysList.size} টি সংরক্ষণ", fontSize = 11.sp) }
                     )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                OutlinedTextField(
-                    value = groqKeysInput,
-                    onValueChange = { groqKeysInput = it },
-                    placeholder = { Text("gsk_..., gsk_...") },
-                    modifier = Modifier.fillMaxWidth().testTag("groq_keys_input"),
-                    shape = RoundedCornerShape(16.dp)
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
                 Button(
-                    onClick = {
-                        prefsManager.setGroqKeys(groqKeysInput)
-                        groqTestStatus = "Groq Key(s) সংরক্ষণ করা হয়েছে।"
-                    },
-                    modifier = Modifier.fillMaxWidth().testTag("save_groq_keys_button"),
+                    onClick = { showAddGroqDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp)
                 ) {
-                    Text("Groq keys সংরক্ষণ করো")
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("+ key যোগ করো")
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            isTestingGroq = true
-                            groqTestStatus = "Groq keys পরীক্ষা করা হচ্ছে..."
-                            scope.launch {
-                                val keys = prefsManager.getGroqKeys()
-                                if (keys.isEmpty()) {
-                                    groqTestStatus = "কোনো Groq Key সংরক্ষিত নাই।"
-                                } else {
-                                    val client = GroqChatClient(keys, "", "Test")
-                                    val res = client.sendMessage(emptyList(), "Hi")
-                                    if (res.errorMessage == null) {
-                                        val modelName = res.modelUsed ?: "অজানা"
-                                        groqTestStatus = "সফল: Groq Key সংযোগ ঠিক আছে! ✓\n(চালু মডেল: $modelName)"
-                                    } else {
-                                        groqTestStatus = "ব্যর্থ: ${res.errorMessage}"
+                if (groqKeysList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("কোনো Groq Key যোগ করা হয়নি।", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    }
+                } else {
+                    groqKeysList.forEachIndexed { index, key ->
+                        val maskedKey = if (key.length >= 4) "gsk_...${key.takeLast(4)}" else "gsk_...XXXX"
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    .fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Key #${index + 1}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    Text(maskedKey, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            isTestingGroqKey = key
+                                            scope.launch {
+                                                val client = GroqChatClient(listOf(key), "", "Test")
+                                                val res = client.sendMessage(emptyList(), "Hi")
+                                                isTestingGroqKey = null
+                                                if (res.errorMessage == null) {
+                                                    val model = res.modelUsed ?: "অজানা"
+                                                    resultDialogData = ResultDialogData("পরীক্ষা সফল", "Groq Key সংযোগ ঠিকমতো কাজ করছে! ✓\n(চালু মডেল: $model)", false)
+                                                } else {
+                                                    resultDialogData = ResultDialogData("পরীক্ষা ব্যর্থ", res.errorMessage, true)
+                                                }
+                                            }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(36.dp),
+                                        enabled = isTestingGroqKey != key
+                                    ) {
+                                        if (isTestingGroqKey == key) {
+                                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        } else {
+                                            Text("পরীক্ষা করো", fontSize = 11.sp)
+                                        }
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            prefsManager.removeGroqKey(key)
+                                            resultDialogData = ResultDialogData("মুছে ফেলা হয়েছে", "Groq Key মুছে ফেলা হয়েছে।", false)
+                                        }
+                                    ) {
+                                        Icon(Icons.Filled.Delete, contentDescription = "মুছুন", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                                     }
                                 }
-                                isTestingGroq = false
                             }
-                        },
-                        enabled = !isTestingGroq
-                    ) {
-                        Text("সংযোগ পরীক্ষা করুন")
-                    }
-
-                    TextButton(
-                        onClick = {
-                            prefsManager.clearGroqKeys()
-                            groqKeysInput = ""
-                            groqTestStatus = "Groq key(s) মুছে ফেলা হয়েছে।"
                         }
-                    ) {
-                        Text("মুছে ফেলুন", color = MaterialTheme.colorScheme.error)
                     }
-                }
-
-                if (groqTestStatus != null) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(groqTestStatus!!, fontSize = 12.sp, style = MaterialTheme.typography.bodyMedium)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -340,4 +364,52 @@ fun ConnectionsScreen(
 
         Spacer(modifier = Modifier.height(80.dp))
     }
+
+    // Add Groq Key Dialog
+    if (showAddGroqDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddGroqDialog = false },
+            title = { Text("নতুন Groq Key যোগ করো") },
+            text = {
+                OutlinedTextField(
+                    value = newGroqKeyInput,
+                    onValueChange = { newGroqKeyInput = it },
+                    placeholder = { Text("gsk_...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (newGroqKeyInput.isNotBlank()) {
+                        val added = prefsManager.addGroqKey(newGroqKeyInput)
+                        showAddGroqDialog = false
+                        newGroqKeyInput = ""
+                        if (added) {
+                            resultDialogData = ResultDialogData("সফল", "Groq Key সফলভাবে তালিকায় যোগ করা হয়েছে।", false)
+                        } else {
+                            resultDialogData = ResultDialogData("তথ্য", "এই Key-টি আগেই যোগ করা রয়েছে।", true)
+                        }
+                    }
+                }) {
+                    Text("যোগ করো")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddGroqDialog = false }) { Text("বাতিল") }
+            }
+        )
+    }
+
+    // Result Popup Dialog
+    resultDialogData?.let { dialog ->
+        MairaResultDialog(
+            title = dialog.title,
+            message = dialog.message,
+            isError = dialog.isError,
+            onDismiss = { resultDialogData = null }
+        )
+    }
 }
+
+private data class ResultDialogData(val title: String, val message: String, val isError: Boolean)

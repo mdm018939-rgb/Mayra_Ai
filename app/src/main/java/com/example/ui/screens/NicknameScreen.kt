@@ -14,16 +14,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.EncryptedPreferencesManager
+import com.example.service.MairaVoiceService
+import com.example.ui.components.MairaResultDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NicknameScreen(
     prefsManager: EncryptedPreferencesManager,
+    onReconnectVoiceSession: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var nicknameInput by remember { mutableStateOf(prefsManager.getNickname()) }
-    var saveStatus by remember { mutableStateOf<String?>(null) }
+    var dialogData by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     Column(
         modifier = modifier
@@ -73,7 +76,14 @@ fun NicknameScreen(
         Button(
             onClick = {
                 prefsManager.setNickname(nicknameInput)
-                saveStatus = "ডাকনাম সংরক্ষণ করা হয়েছে ✓"
+                val isVoiceActive = MairaVoiceService.isSessionActive()
+
+                if (isVoiceActive) {
+                    onReconnectVoiceSession()
+                    dialogData = Pair("সফল", "ডাকনাম সংরক্ষণ করা হয়েছে! নতুন নাম কার্যকর করতে ভয়েস সেসন রি-কানেক্ট করা হচ্ছে... ✓")
+                } else {
+                    dialogData = Pair("সফল", "ডাকনাম সফলভাবে সংরক্ষণ করা হয়েছে ✓")
+                }
             },
             modifier = Modifier.fillMaxWidth().height(50.dp),
             shape = RoundedCornerShape(25.dp)
@@ -81,9 +91,13 @@ fun NicknameScreen(
             Text("সংরক্ষণ করো")
         }
 
-        if (saveStatus != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(saveStatus!!, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+        dialogData?.let { (title, msg) ->
+            MairaResultDialog(
+                title = title,
+                message = msg,
+                isError = false,
+                onDismiss = { dialogData = null }
+            )
         }
     }
 }
