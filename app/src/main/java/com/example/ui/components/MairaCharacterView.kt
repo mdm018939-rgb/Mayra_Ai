@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -9,18 +11,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.data.MairaLogger
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -32,12 +34,49 @@ fun MairaCharacterView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val infiniteTransition = rememberInfiniteTransition(label = "MairaCharacterTransition")
 
-    // Breathing and Floating Bob
+    // Log missing layer PNG files once
+    LaunchedEffect(Unit) {
+        MairaLogger.log(
+            MairaLogger.Category.UI,
+            MairaLogger.Level.INFO,
+            "Missing layer PNG assets for full limb animation: maira_arm_right.png, maira_eyes_closed.png, maira_mouth_small.png, maira_mouth_open.png. Using runtime bitmap region slicing instead."
+        )
+    }
+
+    // Load original bitmap and slice into 3 regions (Head, Torso, Legs)
+    val slicedBitmaps = remember {
+        try {
+            val original = BitmapFactory.decodeResource(context.resources, R.drawable.maira_body)
+            if (original != null && original.height > 10 && original.width > 10) {
+                val w = original.width
+                val h = original.height
+
+                val headH = (h * 0.33f).toInt()
+                val torsoStartY = (h * 0.30f).toInt()
+                val torsoH = (h * 0.36f).toInt()
+                val legsStartY = (h * 0.63f).toInt()
+                val legsH = h - legsStartY
+
+                val headBmp = Bitmap.createBitmap(original, 0, 0, w, headH)
+                val torsoBmp = Bitmap.createBitmap(original, 0, torsoStartY, w, torsoH)
+                val legsBmp = Bitmap.createBitmap(original, 0, legsStartY, w, legsH)
+
+                Triple(headBmp.asImageBitmap(), torsoBmp.asImageBitmap(), legsBmp.asImageBitmap())
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "MairaMultiPartTransition")
+
+    // Whole body float bob
     val bobOffset by infiniteTransition.animateFloat(
-        initialValue = -6f,
-        targetValue = 6f,
+        initialValue = -5f,
+        targetValue = 5f,
         animationSpec = infiniteRepeatable(
             animation = tween(2200, easing = LinearOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -45,18 +84,40 @@ fun MairaCharacterView(
         label = "Bob"
     )
 
-    // Breathing scale
-    val breatheScale by infiniteTransition.animateFloat(
+    // Torso breathing scale
+    val breatheScaleY by infiniteTransition.animateFloat(
         initialValue = 0.99f,
-        targetValue = 1.015f,
+        targetValue = 1.02f,
         animationSpec = infiniteRepeatable(
             animation = tween(1800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "Breathe"
+        label = "TorsoBreathe"
     )
 
-    // Orbiting dot angle
+    // Head subtle sway
+    val headSwayAngle by infiniteTransition.animateFloat(
+        initialValue = -2.5f,
+        targetValue = 2.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "HeadSway"
+    )
+
+    // Leg weight shift
+    val legShiftX by infiniteTransition.animateFloat(
+        initialValue = -2f,
+        targetValue = 2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "LegShift"
+    )
+
+    // Orbit angle for background particles
     val orbitAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
@@ -67,23 +128,24 @@ fun MairaCharacterView(
         label = "Orbit"
     )
 
-    // Responsive tilts based on status
+    // Status-driven responsive transforms
     val isListening = status.contains("শুনছি")
     val isThinking = status.contains("ভাবছি")
     val isSpeaking = status.contains("বলছি")
 
     val targetTilt = when {
         isListening -> -4f // Lean in
-        isThinking -> 5f  // Head tilt
+        isThinking -> 6f   // Pensive tilt
         else -> 0f
     }
     val animatedTilt by animateFloatAsState(
         targetValue = targetTilt,
         animationSpec = tween(600),
-        label = "Tilt"
+        label = "StatusTilt"
     )
 
-    val mouthScale = 1f + (speakerRms * 0.4f).coerceIn(0f, 0.5f)
+    // Speaking reaction for head scale
+    val speechMouthScale = 1f + (speakerRms * 0.25f).coerceIn(0f, 0.35f)
 
     val isDark = isSystemInDarkTheme()
     val waveColor1 = if (isDark) Color(0x339B6BFF) else Color(0x33E53956)
@@ -140,20 +202,73 @@ fun MairaCharacterView(
             drawCircle(waveColor2.copy(alpha = 0.5f), radius = 8f, center = Offset(dot2X, dot2Y))
         }
 
-        // Full Body Character Image
-        Image(
-            painter = painterResource(id = R.drawable.maira_body),
-            contentDescription = "মাইরা অ্যানিমে চরিত্র",
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxHeight(0.92f)
-                .graphicsLayer {
-                    translationY = bobOffset
-                    scaleX = breatheScale
-                    scaleY = breatheScale * if (isSpeaking) mouthScale else 1f
-                    rotationZ = animatedTilt
-                }
-                .testTag("maira_body_image")
-        )
+        // Multi-part character layer box
+        if (slicedBitmaps != null) {
+            val (head, torso, legs) = slicedBitmaps
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Top,
+                modifier = Modifier
+                    .fillMaxHeight(0.92f)
+                    .graphicsLayer {
+                        translationY = bobOffset
+                        rotationZ = animatedTilt
+                    }
+            ) {
+                // Head Region with independent tilt & audio reaction scale
+                Image(
+                    bitmap = head,
+                    contentDescription = "মাইরার মাথা",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .weight(0.33f)
+                        .graphicsLayer {
+                            rotationZ = headSwayAngle
+                            scaleY = if (isSpeaking) speechMouthScale else 1f
+                            scaleX = if (isSpeaking) 1f + (speakerRms * 0.08f) else 1f
+                        }
+                )
+
+                // Torso Region with independent breathing scale
+                Image(
+                    bitmap = torso,
+                    contentDescription = "মাইরার শরীর",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .weight(0.36f)
+                        .graphicsLayer {
+                            scaleY = breatheScaleY
+                            scaleX = 1f + (breatheScaleY - 1f) * 0.5f
+                        }
+                )
+
+                // Legs Region with weight shift translation
+                Image(
+                    bitmap = legs,
+                    contentDescription = "মাইরার পা",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .weight(0.31f)
+                        .graphicsLayer {
+                            translationX = legShiftX
+                        }
+                )
+            }
+        } else {
+            // Fallback to whole body image
+            Image(
+                painter = androidx.compose.ui.res.painterResource(id = R.drawable.maira_body),
+                contentDescription = "মাইরা অ্যানিমে চরিত্র",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxHeight(0.92f)
+                    .graphicsLayer {
+                        translationY = bobOffset
+                        rotationZ = animatedTilt
+                    }
+                    .testTag("maira_body_image")
+            )
+        }
     }
 }

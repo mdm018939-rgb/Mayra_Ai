@@ -95,10 +95,12 @@ fun OverlaySettingsScreen(
                                 } else {
                                     isEnabled = true
                                     prefsManager.setOverlayEnabled(true)
+                                    com.example.service.MairaOverlayService.startService(context)
                                 }
                             } else {
                                 isEnabled = false
                                 prefsManager.setOverlayEnabled(false)
+                                com.example.service.MairaOverlayService.stopService(context)
                             }
                         }
                     )
@@ -116,7 +118,7 @@ fun OverlaySettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "💡 অ্যাভাটার সাইজ স্বয়ংক্রিয়ভাবে স্ক্রিনের উচ্চতার ২২% অনুপাতে যেকোনো ডিসপ্লেতে নিখুঁতভাবে প্রদর্শিত হবে।",
+                            text = "💡 অ্যাভাটার সাইজ স্বয়ংক্রিয়ভাবে স্ক্রিনের উচ্চতার ৩০% অনুপাতে যেকোনো ডিসপ্লেতে নিখুঁতভাবে প্রদর্শিত হবে।",
                             style = MaterialTheme.typography.bodyMedium,
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurface

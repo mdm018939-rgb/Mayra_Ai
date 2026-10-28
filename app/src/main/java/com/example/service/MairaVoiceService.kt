@@ -103,6 +103,11 @@ class MairaVoiceService : Service() {
     }
 
     private fun startLiveSession() {
+        if (isSessionActive() || liveClient != null) {
+            MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.INFO, "ভয়েস সেসন ইতিমধ্যেই সক্রিয় রয়েছে (Idempotent call)")
+            return
+        }
+
         val geminiKey = prefsManager.getGeminiKey()
         if (geminiKey.isBlank()) {
             _statusMessage.value = "প্রথমে সেটিংসে আপনার Gemini key দিন"
@@ -128,10 +133,6 @@ class MairaVoiceService : Service() {
             listener = createLiveListener()
         ).apply {
             connect()
-        }
-
-        if (prefsManager.isOverlayEnabled()) {
-            showFloatingOverlay()
         }
     }
 
@@ -392,6 +393,11 @@ class MairaVoiceService : Service() {
     }
 
     fun stopLiveSession() {
+        if (_sessionState.value == "বন্ধ" && liveClient == null && !isRecording) {
+            MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.INFO, "ভয়েস সেসন ইতিমধ্যেই বন্ধ রয়েছে (Idempotent call)")
+            return
+        }
+
         isRecording = false
         recordThread?.interrupt()
         try { audioRecord?.stop(); audioRecord?.release() } catch (e: Exception) {}
@@ -404,8 +410,6 @@ class MairaVoiceService : Service() {
 
         liveClient?.disconnect()
         liveClient = null
-
-        removeFloatingOverlay()
 
         if (wakeLock?.isHeld == true) wakeLock?.release()
 

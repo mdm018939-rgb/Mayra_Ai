@@ -5,7 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -21,12 +21,15 @@ import androidx.core.content.ContextCompat
 import com.example.api.GeminiImageClient
 import com.example.api.GroqChatClient
 import com.example.data.EncryptedPreferencesManager
+import com.example.data.MairaCrashHandler
 import com.example.data.db.AppDatabase
 import com.example.data.db.ChatMessageEntity
 import com.example.personality.PersonalityPrompts
+import com.example.service.MairaOverlayService
 import com.example.service.MairaVoiceService
 import com.example.tools.DeviceToolExecutor
 import com.example.ui.components.MairaBottomBar
+import com.example.ui.components.MairaResultDialog
 import com.example.ui.screens.*
 import com.example.ui.theme.MairaTheme
 import kotlinx.coroutines.delay
@@ -46,6 +49,11 @@ class MainActivity : ComponentActivity() {
         prefsManager = EncryptedPreferencesManager(this)
         database = AppDatabase.getInstance(this)
         toolExecutor = DeviceToolExecutor(this)
+
+        // Restore floating overlay service on app launch if enabled & permitted
+        if (prefsManager.isOverlayEnabled() && Settings.canDrawOverlays(this)) {
+            MairaOverlayService.startService(this)
+        }
 
         setContent {
             val themeMode by prefsManager.themeModeFlow.collectAsState()
@@ -100,6 +108,21 @@ fun MairaAppContent(
     var currentScreen by remember { mutableStateOf("home") }
     var currentConvoId by remember { mutableStateOf(UUID.randomUUID().toString()) }
 
+    // Dialog state for mic & crash feedback
+    var resultDialogData by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }
+
+    // Check for previous crash on launch
+    LaunchedEffect(Unit) {
+        if (MairaCrashHandler.hasPendingCrashLog(context)) {
+            val trace = MairaCrashHandler.getAndClearCrashLog(context) ?: "Unknown stacktrace"
+            resultDialogData = Triple(
+                "অ্যাপ আগে বন্ধ হয়ে গিয়েছিল",
+                "ত্রুটির বিবরণ:\n${trace.take(200)}...\n(সম্পূর্ণ বিবরণ সিস্টেম লগে যুক্ত হয়েছে)",
+                true
+            )
+        }
+    }
+
     // Service reactive states
     val sessionState by MairaVoiceService.sessionState.collectAsState()
     val statusMessage by MairaVoiceService.statusMessage.collectAsState()
@@ -133,6 +156,9 @@ fun MairaAppContent(
         GeminiImageClient(context, geminiKey)
     }
 
+    // Debounce for mic button taps (~800ms)
+    var lastMicClickTime by remember { mutableLongStateOf(0L) }
+
     // Permission Launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -141,32 +167,39 @@ fun MairaAppContent(
         if (recordGranted) {
             if (geminiKey.isNotBlank()) {
                 onStartVoiceService()
+                resultDialogData = Triple("মাইক চালু হয়েছে", "মাইক চালু হয়েছে, বলো...", false)
             } else {
                 currentScreen = "connections"
-                Toast.makeText(context, "প্রথমে সেটিংসে আপনার Gemini key দিন", Toast.LENGTH_LONG).show()
+                resultDialogData = Triple("Gemini Key প্রয়োজন", "প্রথমে সেটিংসে আপনার Gemini key দিন", true)
             }
         } else {
-            Toast.makeText(context, "ভয়েস সেসনের জন্য মাইক্রোফোন অনুমতি প্রয়োজন", Toast.LENGTH_SHORT).show()
+            resultDialogData = Triple("অনুমতি দেওয়া হয়নি", "ভয়েস সেসনের জন্য মাইক্রোফোন অনুমতি প্রয়োজন", true)
         }
     }
 
     val handleMicButtonClick = {
-        if (isSessionActive) {
-            onStopVoiceService()
-        } else {
-            if (geminiKey.isBlank()) {
-                currentScreen = "connections"
-                Toast.makeText(context, "প্রথমে সেটিংসে আপনার Gemini key দিন", Toast.LENGTH_LONG).show()
+        val now = System.currentTimeMillis()
+        if (now - lastMicClickTime >= 800L) {
+            lastMicClickTime = now
+            if (isSessionActive) {
+                onStopVoiceService()
+                resultDialogData = Triple("মাইক বন্ধ হয়েছে", "মাইক বন্ধ করা হয়েছে", false)
             } else {
-                val hasMicPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                if (hasMicPerm) {
-                    onStartVoiceService()
+                if (geminiKey.isBlank()) {
+                    currentScreen = "connections"
+                    resultDialogData = Triple("Gemini Key প্রয়োজন", "প্রথমে সেটিংসে আপনার Gemini key দিন", true)
                 } else {
-                    val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                    val hasMicPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                    if (hasMicPerm) {
+                        onStartVoiceService()
+                        resultDialogData = Triple("মাইক চালু হয়েছে", "মাইক চালু হয়েছে, বলো...", false)
+                    } else {
+                        val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                        permissionLauncher.launch(perms.toTypedArray())
                     }
-                    permissionLauncher.launch(perms.toTypedArray())
                 }
             }
         }
@@ -201,6 +234,16 @@ fun MairaAppContent(
                 database.chatMessageDao().insertMessage(mairaMsg)
             }
         }
+    }
+
+    // Result dialog feedback card
+    resultDialogData?.let { (title, msg, isErr) ->
+        MairaResultDialog(
+            title = title,
+            message = msg,
+            isError = isErr,
+            onDismiss = { resultDialogData = null }
+        )
     }
 
     Scaffold(
