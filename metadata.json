@@ -1,0 +1,6 @@
+{
+  "name": "Maira",
+  "description": "মাইরা - তোমার ব্যক্তিগত এআই সঙ্গিনী (Bengali AI Companion)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
