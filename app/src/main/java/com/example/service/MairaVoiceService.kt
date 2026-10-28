@@ -121,6 +121,14 @@ class MairaVoiceService : Service() {
 
         initAudioTrack()
         connectLiveClient(geminiKey)
+
+        if (android.provider.Settings.canDrawOverlays(this)) {
+            try {
+                MairaOverlayService.startService(this)
+            } catch (e: Exception) {
+                MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.WARN, "ভয়েস সেসনের সাথে ভাসমান ওভারলে চালু করতে সমস্যা: ${e.message}")
+            }
+        }
     }
 
     private fun connectLiveClient(apiKey: String) {
@@ -460,6 +468,14 @@ class MairaVoiceService : Service() {
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+
+        if (!prefsManager.isOverlayEnabled()) {
+            try {
+                MairaOverlayService.stopService(this)
+            } catch (e: Exception) {
+                MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.WARN, "ভাসমান ওভারলে বন্ধ করতে সমস্যা: ${e.message}")
+            }
+        }
 
         MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.INFO, "ভয়েস সেসন ও সার্ভিস সম্পূর্ণ বন্ধ করা হয়েছে")
     }

@@ -126,6 +126,27 @@ fun OverlaySettingsScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // Live Preview Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        com.example.ui.components.MairaAvatarComposable(
+                            status = "প্রস্তুত, কথা বলো...",
+                            micRms = 0f,
+                            speakerRms = 0f,
+                            sessionState = if (isEnabled) "সংযুক্ত" else "বন্ধ",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
@@ -136,7 +157,7 @@ fun OverlaySettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "💡 অ্যাভাটার সাইজ স্বয়ংক্রিয়ভাবে স্ক্রিনের উচ্চতার ৩০% অনুপাতে যেকোনো ডিসপ্লেতে নিখুঁতভাবে প্রদর্শিত হবে।",
+                            text = "💡 লাইভ লিপ-সিঙ্ক ও চোখ পলক ফেলা অ্যানিমেটেড অ্যাভাটার অন্যান্য অ্যাপের (ইউটিউব, হোয়াটসঅ্যাপ ইত্যাদি) উপরে ড্র্যাগ করে যেকোনো পাশে রাখা যাবে।",
                             style = MaterialTheme.typography.bodyMedium,
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurface

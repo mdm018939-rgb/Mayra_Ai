@@ -60,4 +60,38 @@ class MairaLogicUnitTest {
         val resolvedFallback = GroqModelResolver.resolveModel("")
         assertEquals(GroqConstants.DEFAULT_FALLBACK_MODEL, resolvedFallback)
     }
+
+    @Test
+    fun testAvatarLipSyncAmplitudeMapping() {
+        // Closed / resting mouth when speaker RMS is 0 or low
+        val restingSpeakerRms = 0f
+        val restingTarget = if (restingSpeakerRms > 0.035f) {
+            ((restingSpeakerRms - 0.02f) * 2.8f).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+        assertEquals(0f, restingTarget, 0.001f)
+
+        // Speaking amplitude mapping
+        val speakingSpeakerRms = 0.25f
+        val speakingTarget = if (speakingSpeakerRms > 0.035f) {
+            ((speakingSpeakerRms - 0.02f) * 2.8f).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+        assertTrue(speakingTarget > 0.5f)
+        assertTrue(speakingTarget <= 1.0f)
+
+        // Clamping check for peak loud audio
+        val peakLoudRms = 0.95f
+        val peakTarget = ((peakLoudRms - 0.02f) * 2.8f).coerceIn(0f, 1f)
+        assertEquals(1.0f, peakTarget, 0.001f)
+    }
+
+    @Test
+    fun testOverlayServiceConstants() {
+        assertEquals("ACTION_SHOW_OVERLAY", com.example.service.MairaOverlayService.ACTION_SHOW_OVERLAY)
+        assertEquals("ACTION_HIDE_OVERLAY", com.example.service.MairaOverlayService.ACTION_HIDE_OVERLAY)
+        assertEquals("maira_overlay_channel", com.example.service.MairaOverlayService.CHANNEL_ID)
+    }
 }

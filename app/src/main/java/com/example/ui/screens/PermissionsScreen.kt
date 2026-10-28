@@ -74,6 +74,45 @@ fun PermissionsScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
+            // Overlay / Floating Avatar permission item
+            item {
+                val isOverlayGranted = Settings.canDrawOverlays(context)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("অন্যান্য অ্যাপের উপরে প্রদর্শন (SYSTEM_ALERT_WINDOW)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (isOverlayGranted) "অনুমতি পাওয়া গেছে ✓" else "অনুমতি দেওয়া হয়নি ✕ (ভাসমান অ্যাভাটারের জন্য প্রয়োজন)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontSize = 12.sp,
+                                color = if (isOverlayGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                val intent = Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                                context.startActivity(intent)
+                            },
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text("অনুমতি দিন")
+                        }
+                    }
+                }
+            }
+
             items(permissions) { (name, perm) ->
                 val isGranted = context.checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED
                 Card(
