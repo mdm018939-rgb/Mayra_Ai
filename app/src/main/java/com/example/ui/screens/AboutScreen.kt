@@ -8,8 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -110,7 +110,7 @@ fun AboutBottomSheet(
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0088CC))
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Send,
+                    imageVector = Icons.AutoMirrored.Filled.Send,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)

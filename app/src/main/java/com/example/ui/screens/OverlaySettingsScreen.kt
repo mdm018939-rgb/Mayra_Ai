@@ -27,7 +27,8 @@ fun OverlaySettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var isEnabled by remember { mutableStateOf(prefsManager.isOverlayEnabled()) }
+    var isEnabled by remember { mutableStateOf(prefsManager.isOverlayEnabled() && Settings.canDrawOverlays(context)) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
@@ -87,20 +88,37 @@ fun OverlaySettingsScreen(
                         onCheckedChange = { checked ->
                             if (checked) {
                                 if (!Settings.canDrawOverlays(context)) {
-                                    val intent = Intent(
-                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                        Uri.parse("package:${context.packageName}")
-                                    )
-                                    context.startActivity(intent)
+                                    isEnabled = false
+                                    prefsManager.setOverlayEnabled(false)
+                                    errorMessage = "অন্যান্য অ্যাপের উপরে ভাসমান মেয়ে দেখানোর জন্য প্রথমে পারমিশন চালু করতে হবে।"
+                                    try {
+                                        val intent = Intent(
+                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            Uri.parse("package:${context.packageName}")
+                                        )
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        errorMessage = "পারমিশন স্ক্রিন খুলতে সমস্যা হয়েছে: ${e.localizedMessage}"
+                                    }
                                 } else {
-                                    isEnabled = true
-                                    prefsManager.setOverlayEnabled(true)
-                                    com.example.service.MairaOverlayService.startService(context)
+                                    try {
+                                        isEnabled = true
+                                        prefsManager.setOverlayEnabled(true)
+                                        com.example.service.MairaOverlayService.startService(context)
+                                    } catch (e: Exception) {
+                                        isEnabled = false
+                                        prefsManager.setOverlayEnabled(false)
+                                        errorMessage = "ভাসমান মেয়ে চালু করতে সমস্যা হয়েছে: ${e.localizedMessage ?: "অজানা ত্রুটি"}"
+                                    }
                                 }
                             } else {
                                 isEnabled = false
                                 prefsManager.setOverlayEnabled(false)
-                                com.example.service.MairaOverlayService.stopService(context)
+                                try {
+                                    com.example.service.MairaOverlayService.stopService(context)
+                                } catch (e: Exception) {
+                                    errorMessage = "ভাসমান মেয়ে বন্ধ করতে সমস্যা হয়েছে: ${e.localizedMessage}"
+                                }
                             }
                         }
                     )
@@ -126,6 +144,15 @@ fun OverlaySettingsScreen(
                     }
                 }
             }
+        }
+
+        errorMessage?.let { msg ->
+            com.example.ui.components.MairaResultDialog(
+                title = "ভাসমান মেয়ে সেটিংস",
+                message = msg,
+                isError = true,
+                onDismiss = { errorMessage = null }
+            )
         }
     }
 }

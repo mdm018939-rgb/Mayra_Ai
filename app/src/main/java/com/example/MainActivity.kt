@@ -29,6 +29,7 @@ import com.example.service.MairaOverlayService
 import com.example.service.MairaVoiceService
 import com.example.tools.DeviceToolExecutor
 import com.example.ui.components.MairaBottomBar
+import com.example.ui.components.MairaCrashDialog
 import com.example.ui.components.MairaResultDialog
 import com.example.ui.screens.*
 import com.example.ui.theme.MairaTheme
@@ -110,16 +111,15 @@ fun MairaAppContent(
 
     // Dialog state for mic & crash feedback
     var resultDialogData by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }
+    var pendingCrashLog by remember { mutableStateOf<String?>(null) }
 
     // Check for previous crash on launch
     LaunchedEffect(Unit) {
         if (MairaCrashHandler.hasPendingCrashLog(context)) {
-            val trace = MairaCrashHandler.getAndClearCrashLog(context) ?: "Unknown stacktrace"
-            resultDialogData = Triple(
-                "অ্যাপ আগে বন্ধ হয়ে গিয়েছিল",
-                "ত্রুটির বিবরণ:\n${trace.take(200)}...\n(সম্পূর্ণ বিবরণ সিস্টেম লগে যুক্ত হয়েছে)",
-                true
-            )
+            val trace = MairaCrashHandler.getAndClearCrashLog(context)
+            if (!trace.isNullOrBlank()) {
+                pendingCrashLog = trace
+            }
         }
     }
 
@@ -141,15 +141,16 @@ fun MairaAppContent(
 
     // Reactive Preference Flows
     val userNickname by prefsManager.nicknameFlow.collectAsState()
+    val userPersonality by prefsManager.personalityFlow.collectAsState()
     val groqKeys by prefsManager.groqKeysFlow.collectAsState()
-    val geminiKey = prefsManager.getGeminiKey()
+    val geminiKeys by prefsManager.geminiKeysFlow.collectAsState()
+    val geminiKey = geminiKeys.firstOrNull() ?: prefsManager.getGeminiKey()
 
-    val hasKeys = geminiKey.isNotBlank() || groqKeys.isNotEmpty()
+    val hasKeys = geminiKeys.isNotEmpty() || groqKeys.isNotEmpty()
 
-    val groqClient = remember(groqKeys, geminiKey, prefsManager.getPersonality(), userNickname) {
-        val personality = prefsManager.getPersonality()
-        val sysPrompt = PersonalityPrompts.getSystemInstruction(personality, userNickname)
-        GroqChatClient(groqKeys, geminiKey, sysPrompt)
+    val groqClient = remember(groqKeys, geminiKeys, userPersonality, userNickname) {
+        val sysPrompt = PersonalityPrompts.getSystemInstruction(userPersonality, userNickname)
+        GroqChatClient(groqKeys, geminiKeys, sysPrompt)
     }
 
     val imageClient = remember(geminiKey) {
@@ -243,6 +244,13 @@ fun MairaAppContent(
             message = msg,
             isError = isErr,
             onDismiss = { resultDialogData = null }
+        )
+    }
+
+    pendingCrashLog?.let { crashTrace ->
+        MairaCrashDialog(
+            crashLog = crashTrace,
+            onDismiss = { pendingCrashLog = null }
         )
     }
 
@@ -378,9 +386,12 @@ fun MairaAppContent(
                     onBack = { currentScreen = "settings" }
                 )
 
-                "about" -> AboutScreen(
-                    onBack = { currentScreen = "settings" }
-                )
+                "about" -> {
+                    SettingsScreen(onNavigateToSubPage = { page -> currentScreen = page })
+                    AboutScreen(
+                        onBack = { currentScreen = "settings" }
+                    )
+                }
             }
         }
     }

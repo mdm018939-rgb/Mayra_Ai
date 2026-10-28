@@ -22,7 +22,7 @@ fun ThemeScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedTheme by remember { mutableStateOf(prefsManager.getThemeMode()) }
+    val selectedTheme by prefsManager.themeModeFlow.collectAsState()
 
     val options = listOf(
         Pair("light", "হালকা (সাদা ও গোলাপী থিম)"),
@@ -70,7 +70,6 @@ fun ThemeScreen(
                     .fillMaxWidth()
                     .padding(vertical = 6.dp)
                     .clickable {
-                        selectedTheme = key
                         prefsManager.setThemeMode(key)
                     },
                 shape = RoundedCornerShape(18.dp),
@@ -87,7 +86,6 @@ fun ThemeScreen(
                     RadioButton(
                         selected = isSelected,
                         onClick = {
-                            selectedTheme = key
                             prefsManager.setThemeMode(key)
                         }
                     )

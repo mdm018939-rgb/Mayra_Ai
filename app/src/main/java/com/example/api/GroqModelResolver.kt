@@ -31,7 +31,7 @@ object GroqModelResolver {
 
         try {
             val request = Request.Builder()
-                .url("https://api.groq.com/openai/v1/models")
+                .url(GroqConstants.MODELS_ENDPOINT)
                 .addHeader("Authorization", "Bearer $apiKey")
                 .get()
                 .build()

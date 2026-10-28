@@ -53,18 +53,28 @@ class MairaOverlayService : Service() {
 
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
+    private var avatarAnimator: android.animation.ValueAnimator? = null
     private lateinit var prefsManager: EncryptedPreferencesManager
 
     override fun onCreate() {
         super.onCreate()
         prefsManager = EncryptedPreferencesManager(this)
         createNotificationChannel()
+        try {
+            startForegroundNotification()
+        } catch (e: Exception) {
+            MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.ERROR, "startForegroundNotification ব্যর্থ: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        try {
+            startForegroundNotification()
+        } catch (e: Exception) {
+            MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.ERROR, "onStartCommand startForeground ত্রুটি: ${e.message}")
+        }
         when (intent?.action) {
             ACTION_SHOW_OVERLAY -> {
-                startForegroundNotification()
                 showOverlayWindow()
             }
             ACTION_HIDE_OVERLAY -> {
@@ -76,10 +86,13 @@ class MairaOverlayService : Service() {
         return START_STICKY
     }
 
+    @Synchronized
     @SuppressLint("ClickableViewAccessibility")
     private fun showOverlayWindow() {
         if (!Settings.canDrawOverlays(this)) {
             MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.WARN, "ওভারলে পারমিশন নাই, ভাসমান মেয়ে দেখানো সম্ভব হয়নি")
+            prefsManager.setOverlayEnabled(false)
+            stopSelf()
             return
         }
 
@@ -111,6 +124,25 @@ class MairaOverlayService : Service() {
             val img = ImageView(this).apply {
                 setImageResource(R.drawable.maira_body)
                 scaleType = ImageView.ScaleType.FIT_CENTER
+                pivotX = widthPx / 2f
+                pivotY = heightPx.toFloat() // Pivot at feet!
+            }
+
+            avatarAnimator?.cancel()
+            avatarAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 2600L
+                repeatCount = android.animation.ValueAnimator.INFINITE
+                repeatMode = android.animation.ValueAnimator.REVERSE
+                interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+                addUpdateListener { anim ->
+                    val fraction = anim.animatedValue as Float
+                    img.rotation = -2.0f + 4.0f * fraction
+                    img.translationY = -4f + 8f * fraction
+                    val scale = 0.99f + 0.02f * fraction
+                    img.scaleX = scale
+                    img.scaleY = scale
+                }
+                start()
             }
 
             img.setOnTouchListener(object : View.OnTouchListener {
@@ -159,11 +191,17 @@ class MairaOverlayService : Service() {
             MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "ভাসমান অ্যাভাটার ওভারলে উইন্ডো চালু হয়েছে (৩০% উচ্চতা)")
         } catch (e: Exception) {
             isOverlayShowing = false
+            try {
+                prefsManager.setOverlayEnabled(false)
+            } catch (_: Exception) {}
             MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.ERROR, "ভাসমান অ্যাভাটার যোগ করতে সমস্যা: ${e.message}")
+            stopSelf()
         }
     }
 
     private fun removeOverlayInternal() {
+        avatarAnimator?.cancel()
+        avatarAnimator = null
         overlayView?.let {
             try {
                 windowManager?.removeView(it)
@@ -191,7 +229,13 @@ class MairaOverlayService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun createNotificationChannel() {

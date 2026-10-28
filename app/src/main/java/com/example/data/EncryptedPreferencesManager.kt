@@ -27,8 +27,13 @@ class EncryptedPreferencesManager(context: Context) {
     private val _groqKeysFlow = MutableStateFlow(getGroqKeys())
     val groqKeysFlow: StateFlow<List<String>> = _groqKeysFlow.asStateFlow()
 
+    private val _geminiKeysFlow = MutableStateFlow(emptyList<String>())
+    val geminiKeysFlow: StateFlow<List<String>> = _geminiKeysFlow.asStateFlow()
+
     init {
         ensureKey()
+        migrateSingleGeminiKey()
+        _geminiKeysFlow.value = getGeminiKeys()
     }
 
     private fun ensureKey() {
@@ -99,22 +104,113 @@ class EncryptedPreferencesManager(context: Context) {
         }
     }
 
-    // Gemini API Key
+    private fun migrateSingleGeminiKey() {
+        try {
+            val encList = prefs.getString("gemini_keys_enc", null)
+            if (encList == null) {
+                val oldEnc = prefs.getString("gemini_key_enc", "") ?: ""
+                val oldKey = decrypt(oldEnc).trim()
+                val list = mutableListOf<String>()
+                if (oldKey.isNotBlank()) {
+                    list.add(oldKey)
+                }
+                try {
+                    val buildKey = com.example.BuildConfig.GEMINI_API_KEY
+                    if (buildKey.isNotBlank() && buildKey != "your_api_key_here" && !list.contains(buildKey)) {
+                        list.add(buildKey)
+                    }
+                } catch (_: Throwable) {}
+                if (list.isNotEmpty()) {
+                    saveGeminiKeysList(list)
+                    MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "পূর্ববর্তী Gemini key সফলভাবে নতুন তালিকায় মাইগ্রেট করা হয়েছে (${list.size} টি key)")
+                }
+            }
+        } catch (e: Exception) {
+            MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.ERROR, "Gemini key মাইগ্রেশন ত্রুটি: ${e.message}")
+        }
+    }
+
+    // Gemini API Keys List & Round-Robin
+    private var geminiRoundRobinIndex = 0
+
+    fun getGeminiKeys(): List<String> {
+        val enc = prefs.getString("gemini_keys_enc", "") ?: ""
+        val raw = decrypt(enc)
+        val list = if (raw.isNotBlank()) {
+            raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        } else {
+            emptyList()
+        }
+        if (list.isNotEmpty()) return list
+
+        // Fallback to old single key if present
+        val oldEnc = prefs.getString("gemini_key_enc", "") ?: ""
+        val oldSingle = decrypt(oldEnc).trim()
+        if (oldSingle.isNotBlank()) return listOf(oldSingle)
+
+        return try {
+            val buildKey = com.example.BuildConfig.GEMINI_API_KEY
+            if (buildKey.isNotBlank() && buildKey != "your_api_key_here") listOf(buildKey) else emptyList()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    @Synchronized
+    fun getNextGeminiKey(): String {
+        val keys = getGeminiKeys()
+        if (keys.isEmpty()) return ""
+        val key = keys[geminiRoundRobinIndex % keys.size]
+        geminiRoundRobinIndex = (geminiRoundRobinIndex + 1) % keys.size
+        return key
+    }
+
     fun getGeminiKey(): String {
-        val enc = prefs.getString("gemini_key_enc", "") ?: ""
-        return decrypt(enc)
+        val keys = getGeminiKeys()
+        return keys.firstOrNull() ?: ""
     }
 
     fun setGeminiKey(key: String) {
-        val enc = encrypt(key.trim())
-        prefs.edit().putString("gemini_key_enc", enc).apply()
-        val last4 = if (key.length >= 4) key.takeLast(4) else "XXXX"
-        MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "Gemini key সংরক্ষণ করা হয়েছে (...$last4)")
+        addGeminiKey(key)
+    }
+
+    fun addGeminiKey(newKey: String): Boolean {
+        val cleanKey = newKey.trim()
+        if (cleanKey.isBlank()) return false
+        val currentList = getGeminiKeys().toMutableList()
+        if (!currentList.contains(cleanKey)) {
+            currentList.add(cleanKey)
+            saveGeminiKeysList(currentList)
+            val last4 = if (cleanKey.length >= 4) cleanKey.takeLast(4) else "XXXX"
+            MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "নতুন Gemini key যোগ করা হয়েছে (...$last4)")
+            return true
+        }
+        return false
+    }
+
+    fun removeGeminiKey(keyToRemove: String) {
+        val currentList = getGeminiKeys().toMutableList()
+        if (currentList.remove(keyToRemove)) {
+            saveGeminiKeysList(currentList)
+            MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "Gemini key মুছে ফেলা হয়েছে")
+        }
     }
 
     fun clearGeminiKey() {
-        prefs.edit().remove("gemini_key_enc").apply()
-        MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "Gemini key মুছে ফেলা হয়েছে")
+        clearGeminiKeys()
+    }
+
+    fun clearGeminiKeys() {
+        prefs.edit().remove("gemini_keys_enc").remove("gemini_key_enc").apply()
+        _geminiKeysFlow.value = emptyList()
+        MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.INFO, "সকল Gemini key মুছে ফেলা হয়েছে")
+    }
+
+    private fun saveGeminiKeysList(list: List<String>) {
+        val csv = list.joinToString(",")
+        val enc = encrypt(csv)
+        prefs.edit().putString("gemini_keys_enc", enc).apply()
+        _geminiKeysFlow.value = list
     }
 
     // Groq API Keys List
@@ -175,9 +271,21 @@ class EncryptedPreferencesManager(context: Context) {
     }
 
     // Personality
-    fun getPersonality(): String = prefs.getString("selected_personality", "রোমান্টিক সঙ্গী (বউ মোড)") ?: "রোমান্টিক সঙ্গী (বউ মোড)"
+    private val _personalityFlow = MutableStateFlow(getPersonality())
+    val personalityFlow: StateFlow<String> = _personalityFlow.asStateFlow()
+
+    fun getPersonality(): String {
+        val saved = prefs.getString("selected_personality", "রোমান্টিক সঙ্গী (ভালো প্রেমিকা)") ?: "রোমান্টিক সঙ্গী (ভালো প্রেমিকা)"
+        return if (saved == "রোমান্টিক সঙ্গী (বউ মোড)" || saved == "রোমান্টিক সঙ্গী") {
+            "রোমান্টিক সঙ্গী (ভালো প্রেমিকা)"
+        } else {
+            saved
+        }
+    }
+
     fun setPersonality(personality: String) {
         prefs.edit().putString("selected_personality", personality).apply()
+        _personalityFlow.value = personality
         MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "পারসোনালিটি পরিবর্তন: $personality")
     }
 

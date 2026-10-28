@@ -41,9 +41,9 @@ fun ConnectionsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var geminiKeyInput by remember { mutableStateOf(prefsManager.getGeminiKey()) }
-    var showGeminiKey by remember { mutableStateOf(false) }
-    var isTestingGemini by remember { mutableStateOf(false) }
+    var showAddGeminiDialog by remember { mutableStateOf(false) }
+    var newGeminiKeyInput by remember { mutableStateOf("") }
+    var isTestingGeminiKey by remember { mutableStateOf<String?>(null) }
 
     var showAddGroqDialog by remember { mutableStateOf(false) }
     var newGroqKeyInput by remember { mutableStateOf("") }
@@ -52,7 +52,7 @@ fun ConnectionsScreen(
     // Dialog State
     var resultDialogData by remember { mutableStateOf<ResultDialogData?>(null) }
 
-    val currentGeminiKey = prefsManager.getGeminiKey()
+    val geminiKeysList by prefsManager.geminiKeysFlow.collectAsState()
     val groqKeysList by prefsManager.groqKeysFlow.collectAsState()
 
     Column(
@@ -90,7 +90,7 @@ fun ConnectionsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Card 1: Gemini Key (Voice)
+        // Card 1: Gemini Keys (Voice) List
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(22.dp),
@@ -103,115 +103,112 @@ fun ConnectionsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("ভয়েস - Gemini key", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("লাইভ ভয়েস কথোপকথন চালায়।", style = MaterialTheme.typography.bodyMedium, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        Text("ভয়েস - Gemini keys", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("লাইভ ভয়েস কথোপকথন চালায়। একটির কোটা শেষ হলে পরেরটি পালা করে চলবে।", style = MaterialTheme.typography.bodyMedium, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
-
-                    val isSaved = currentGeminiKey.isNotBlank()
-                    val chipText = if (isSaved) {
-                        val last4 = if (currentGeminiKey.length >= 4) currentGeminiKey.takeLast(4) else "XXXX"
-                        "সংরক্ষিত ✓ ...$last4"
-                    } else "key দাও"
 
                     SuggestionChip(
                         onClick = {},
-                        label = { Text(chipText, fontSize = 11.sp, color = if (isSaved) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = if (isSaved) Color(0xFFE8F5E9) else MaterialTheme.colorScheme.errorContainer
-                        )
+                        label = { Text("${geminiKeysList.size} টি সংরক্ষণ", fontSize = 11.sp) }
                     )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                OutlinedTextField(
-                    value = geminiKeyInput,
-                    onValueChange = { geminiKeyInput = it },
-                    placeholder = { Text("আপনার Gemini API key পেস্ট করো") },
-                    modifier = Modifier.fillMaxWidth().testTag("gemini_key_input"),
-                    shape = RoundedCornerShape(16.dp),
-                    visualTransformation = if (showGeminiKey) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { showGeminiKey = !showGeminiKey }) {
-                            Icon(if (showGeminiKey) Icons.Filled.Visibility else Icons.Filled.VisibilityOff, contentDescription = null)
-                        }
-                    },
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
                 Button(
-                    onClick = {
-                        if (geminiKeyInput.isNotBlank()) {
-                            prefsManager.setGeminiKey(geminiKeyInput)
-                            resultDialogData = ResultDialogData("সফল", "Gemini Key সফলভাবে সংরক্ষণ করা হয়েছে।", false)
-                        } else {
-                            resultDialogData = ResultDialogData("ভুল ইনপুট", "দয়া করে একটি সঠিক Gemini API Key ইনপুট দিন।", true)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().testTag("save_gemini_key_button"),
+                    onClick = { showAddGeminiDialog = true },
+                    modifier = Modifier.fillMaxWidth().testTag("add_gemini_key_button"),
                     shape = RoundedCornerShape(20.dp)
                 ) {
-                    Text("Gemini key সংরক্ষণ করো")
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("+ key যোগ করো")
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            val keyToTest = currentGeminiKey.ifBlank { geminiKeyInput }
-                            if (keyToTest.isBlank()) {
-                                resultDialogData = ResultDialogData("পরীক্ষা ব্যর্থ", "পরীক্ষা করার জন্য প্রথমে একটি Gemini Key দিন।", true)
-                                return@OutlinedButton
-                            }
-                            isTestingGemini = true
-                            val client = GeminiLiveWebSocketClient(
-                                apiKey = keyToTest,
-                                systemInstruction = "Test connection",
-                                listener = object : GeminiLiveWebSocketClient.LiveEventListener {
-                                    override fun onSetupComplete() {
-                                        resultDialogData = ResultDialogData("সংযোগ সফল", "Gemini Live API সংযোগ ঠিকমতো কাজ করছে! ✓", false)
-                                        isTestingGemini = false
+                if (geminiKeysList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("কোনো Gemini Key যোগ করা হয়নি।", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    }
+                } else {
+                    geminiKeysList.forEachIndexed { index, key ->
+                        val maskedKey = if (key.length >= 4) "AIza...${key.takeLast(4)}" else "AIza...XXXX"
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    .fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Key #${index + 1}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    Text(maskedKey, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            isTestingGeminiKey = key
+                                            val client = GeminiLiveWebSocketClient(
+                                                apiKey = key,
+                                                systemInstruction = "Test connection",
+                                                listener = object : GeminiLiveWebSocketClient.LiveEventListener {
+                                                    override fun onSetupComplete() {
+                                                        resultDialogData = ResultDialogData("সংযোগ সফল", "Gemini Key #${index + 1} ঠিকমতো কাজ করছে! ✓", false)
+                                                        isTestingGeminiKey = null
+                                                    }
+                                                    override fun onAudioDataReceived(pcm24kBytes: ByteArray) {}
+                                                    override fun onInputTranscription(text: String) {}
+                                                    override fun onOutputTranscription(text: String) {}
+                                                    override fun onInterrupted() {}
+                                                    override fun onTurnComplete() {}
+                                                    override fun onToolCall(id: String, name: String, args: org.json.JSONObject) {}
+                                                    override fun onError(errorMessage: String) {
+                                                        resultDialogData = ResultDialogData("সংযোগ ব্যর্থ", "Gemini Key #${index + 1} সংযোগ ব্যর্থ: $errorMessage", true)
+                                                        isTestingGeminiKey = null
+                                                    }
+                                                    override fun onClosed(code: Int, reason: String) {
+                                                        isTestingGeminiKey = null
+                                                    }
+                                                }
+                                            )
+                                            client.connect()
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(36.dp),
+                                        enabled = isTestingGeminiKey != key
+                                    ) {
+                                        if (isTestingGeminiKey == key) {
+                                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        } else {
+                                            Text("পরীক্ষা করো", fontSize = 11.sp)
+                                        }
                                     }
-                                    override fun onAudioDataReceived(pcm24kBytes: ByteArray) {}
-                                    override fun onInputTranscription(text: String) {}
-                                    override fun onOutputTranscription(text: String) {}
-                                    override fun onInterrupted() {}
-                                    override fun onTurnComplete() {}
-                                    override fun onToolCall(id: String, name: String, args: org.json.JSONObject) {}
-                                    override fun onError(errorMessage: String) {
-                                        resultDialogData = ResultDialogData("সংযোগ ব্যর্থ", "Gemini Live সংযোগ ব্যর্থ: $errorMessage", true)
-                                        isTestingGemini = false
-                                    }
-                                    override fun onClosed(code: Int, reason: String) {
-                                        isTestingGemini = false
+
+                                    IconButton(
+                                        onClick = {
+                                            prefsManager.removeGeminiKey(key)
+                                            resultDialogData = ResultDialogData("মুছে ফেলা হয়েছে", "Gemini Key মুছে ফেলা হয়েছে।", false)
+                                        }
+                                    ) {
+                                        Icon(Icons.Filled.Delete, contentDescription = "মুছুন", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                                     }
                                 }
-                            )
-                            client.connect()
-                        },
-                        enabled = !isTestingGemini
-                    ) {
-                        if (isTestingGemini) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(6.dp))
+                            }
                         }
-                        Text("সংযোগ পরীক্ষা করুন")
-                    }
-
-                    TextButton(
-                        onClick = {
-                            prefsManager.clearGeminiKey()
-                            geminiKeyInput = ""
-                            resultDialogData = ResultDialogData("মুছে ফেলা হয়েছে", "Gemini key সফলভাবে মুছে ফেলা হয়েছে।", false)
-                        }
-                    ) {
-                        Text("মুছে ফেলুন", color = MaterialTheme.colorScheme.error)
                     }
                 }
 
@@ -363,6 +360,42 @@ fun ConnectionsScreen(
         }
 
         Spacer(modifier = Modifier.height(80.dp))
+    }
+
+    // Add Gemini Key Dialog
+    if (showAddGeminiDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddGeminiDialog = false },
+            title = { Text("নতুন Gemini Key যোগ করো") },
+            text = {
+                OutlinedTextField(
+                    value = newGeminiKeyInput,
+                    onValueChange = { newGeminiKeyInput = it },
+                    placeholder = { Text("AIza...") },
+                    modifier = Modifier.fillMaxWidth().testTag("new_gemini_key_input"),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (newGeminiKeyInput.isNotBlank()) {
+                        val added = prefsManager.addGeminiKey(newGeminiKeyInput)
+                        showAddGeminiDialog = false
+                        newGeminiKeyInput = ""
+                        if (added) {
+                            resultDialogData = ResultDialogData("সফল", "Gemini Key সফলভাবে তালিকায় যোগ করা হয়েছে।", false)
+                        } else {
+                            resultDialogData = ResultDialogData("তথ্য", "এই Key-টি আগেই যোগ করা রয়েছে।", true)
+                        }
+                    }
+                }) {
+                    Text("যোগ করো")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddGeminiDialog = false }) { Text("বাতিল") }
+            }
+        )
     }
 
     // Add Groq Key Dialog

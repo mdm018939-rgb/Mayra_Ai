@@ -79,8 +79,6 @@ class MairaVoiceService : Service() {
     private var playbackThread: Thread? = null
 
     private var wakeLock: PowerManager.WakeLock? = null
-    private var windowManager: WindowManager? = null
-    private var overlayView: View? = null
 
     private val stopWords = listOf("থামো", "থাম", "চুপ", "চুপ করো", "স্টপ", "বন্ধ করো")
 
@@ -102,13 +100,16 @@ class MairaVoiceService : Service() {
         return START_NOT_STICKY
     }
 
+    private var voiceGeminiAttempts = 0
+
     private fun startLiveSession() {
         if (isSessionActive() || liveClient != null) {
             MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.INFO, "ভয়েস সেসন ইতিমধ্যেই সক্রিয় রয়েছে (Idempotent call)")
             return
         }
 
-        val geminiKey = prefsManager.getGeminiKey()
+        voiceGeminiAttempts = 0
+        val geminiKey = prefsManager.getNextGeminiKey().ifBlank { prefsManager.getGeminiKey() }
         if (geminiKey.isBlank()) {
             _statusMessage.value = "প্রথমে সেটিংসে আপনার Gemini key দিন"
             MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.WARN, "Gemini Key খালি থাকার কারণে সেসন শুরু করা যায়নি")
@@ -118,6 +119,11 @@ class MairaVoiceService : Service() {
         startForegroundServiceNotification()
         wakeLock?.acquire(30 * 60 * 1000L) // 30 mins max wake lock
 
+        initAudioTrack()
+        connectLiveClient(geminiKey)
+    }
+
+    private fun connectLiveClient(apiKey: String) {
         _sessionState.value = "সংযুক্ত হচ্ছে..."
         _statusMessage.value = "সংযুক্ত হচ্ছে..."
 
@@ -125,14 +131,35 @@ class MairaVoiceService : Service() {
         val nickname = prefsManager.getNickname()
         val systemPrompt = PersonalityPrompts.getSystemInstruction(personality, nickname)
 
-        initAudioTrack()
+        try {
+            liveClient?.disconnect()
+        } catch (_: Exception) {}
 
         liveClient = GeminiLiveWebSocketClient(
-            apiKey = geminiKey,
+            apiKey = apiKey,
             systemInstruction = systemPrompt,
             listener = createLiveListener()
         ).apply {
             connect()
+        }
+    }
+
+    private fun tryNextKeyAndReconnect(triggerReason: String) {
+        val keys = prefsManager.getGeminiKeys()
+        if (keys.size <= 1) return
+        if (voiceGeminiAttempts >= keys.size) {
+            MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.ERROR, "সকল Gemini Live Key চেষ্টা করা হয়েছে, কোনোটি কাজ করছে না")
+            return
+        }
+        voiceGeminiAttempts++
+        val nextKey = prefsManager.getNextGeminiKey()
+        val last4 = if (nextKey.length >= 4) nextKey.takeLast(4) else "XXXX"
+        MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.WARN, "Gemini Live কী সমস্যা ($triggerReason)। পরবর্তী কী দিয়ে পুনঃচেষ্টা করা হচ্ছে (...$last4)...")
+        _statusMessage.value = "পরবর্তী Gemini key চেষ্টা করা হচ্ছে..."
+
+        serviceScope.launch {
+            delay(1000)
+            connectLiveClient(nextKey)
         }
     }
 
@@ -188,11 +215,24 @@ class MairaVoiceService : Service() {
 
         override fun onError(errorMessage: String) {
             _statusMessage.value = errorMessage
+            val isQuotaOrAuth = errorMessage.contains("429") ||
+                    errorMessage.contains("403") ||
+                    errorMessage.contains("401") ||
+                    errorMessage.contains("quota", ignoreCase = true) ||
+                    errorMessage.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ||
+                    errorMessage.contains("API_KEY_INVALID", ignoreCase = true) ||
+                    errorMessage.contains("API key not valid", ignoreCase = true)
+            if (isQuotaOrAuth) {
+                tryNextKeyAndReconnect(errorMessage)
+            }
         }
 
         override fun onClosed(code: Int, reason: String) {
             if (_sessionState.value != "বন্ধ") {
                 _statusMessage.value = "সংযোগ বিচ্ছিন্ন ($code)"
+                if (code == 4003 || code == 4001 || code == 4429 || reason.contains("quota", ignoreCase = true) || reason.contains("exhausted", ignoreCase = true)) {
+                    tryNextKeyAndReconnect("Closed code=$code reason=$reason")
+                }
             }
         }
     }
@@ -414,7 +454,7 @@ class MairaVoiceService : Service() {
         if (wakeLock?.isHeld == true) wakeLock?.release()
 
         _sessionState.value = "বন্ধ"
-        _statusMessage.value = "প্রস্তুত, বলো..."
+        _statusMessage.value = "মাইক বন্ধ করা হয়েছে"
         _micRmsFlow.value = 0f
         _speakerRmsFlow.value = 0f
 
@@ -424,80 +464,6 @@ class MairaVoiceService : Service() {
         MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.INFO, "ভয়েস সেসন ও সার্ভিস সম্পূর্ণ বন্ধ করা হয়েছে")
     }
 
-    private fun showFloatingOverlay() {
-        if (!android.provider.Settings.canDrawOverlays(this)) return
-        try {
-            windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val displayMetrics = resources.displayMetrics
-            val screenHeightPx = displayMetrics.heightPixels
-            val heightPx = (screenHeightPx * 0.22f).toInt().coerceAtLeast(200)
-            val widthPx = (heightPx * 0.65f).toInt() // Proportional width for standing figure
-
-            val params = WindowManager.LayoutParams(
-                widthPx, heightPx,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                gravity = Gravity.TOP or Gravity.START
-                x = 100
-                y = 300
-            }
-
-            val img = ImageView(this).apply {
-                setImageResource(R.drawable.maira_body)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-            }
-
-            img.setOnTouchListener(object : View.OnTouchListener {
-                private var initialX = 0
-                private var initialY = 0
-                private var initialTouchX = 0f
-                private var initialTouchY = 0f
-
-                override fun onTouch(v: View?, event: MotionEvent): Boolean {
-                    when (event.action) {
-                        MotionEvent.ACTION_DOWN -> {
-                            initialX = params.x
-                            initialY = params.y
-                            initialTouchX = event.rawX
-                            initialTouchY = event.rawY
-                            return true
-                        }
-                        MotionEvent.ACTION_MOVE -> {
-                            params.x = initialX + (event.rawX - initialTouchX).toInt()
-                            params.y = initialY + (event.rawY - initialTouchY).toInt()
-                            windowManager?.updateViewLayout(img, params)
-                            return true
-                        }
-                        MotionEvent.ACTION_UP -> {
-                            val diffX = Math.abs(event.rawX - initialTouchX)
-                            val diffY = Math.abs(event.rawY - initialTouchY)
-                            if (diffX < 10 && diffY < 10) {
-                                // Single tap -> stop current speech
-                                flushAudioPlayback()
-                            }
-                            return true
-                        }
-                    }
-                    return false
-                }
-            })
-
-            overlayView = img
-            windowManager?.addView(overlayView, params)
-            MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "ভাসমান অ্যাভাটার ওভারলে যোগ করা হয়েছে")
-        } catch (e: Exception) {
-            MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.ERROR, "ওভারলে উইন্ডো যোগ করতে ব্যর্থ: ${e.message}")
-        }
-    }
-
-    private fun removeFloatingOverlay() {
-        overlayView?.let {
-            try { windowManager?.removeView(it) } catch (e: Exception) {}
-        }
-        overlayView = null
-    }
 
     private fun startForegroundServiceNotification() {
         val notificationIntent = Intent(this, MainActivity::class.java)
