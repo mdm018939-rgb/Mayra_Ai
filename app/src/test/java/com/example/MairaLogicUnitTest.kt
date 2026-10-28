@@ -1,5 +1,7 @@
 package com.example
 
+import com.example.api.GroqConstants
+import com.example.api.GroqModelResolver
 import com.example.data.MairaLogger
 import com.example.personality.PersonalityPrompts
 import org.junit.Assert.*
@@ -32,5 +34,19 @@ class MairaLogicUnitTest {
 
         assertTrue(sysPrompt.contains("মাইরা"))
         assertTrue(sysPrompt.contains("তুমি শুধুমাত্র এবং শুধুমাত্র বাংলায় কথা বলবে ও বুঝবে।"))
+    }
+
+    @Test
+    fun testGroqConstantsAndModelResolver() {
+        assertTrue(GroqConstants.PRIORITY_MODELS.contains("openai/gpt-oss-120b"))
+        assertTrue(GroqConstants.PRIORITY_MODELS.contains("openai/gpt-oss-20b"))
+        assertTrue(GroqConstants.PRIORITY_MODELS.contains("llama-3.3-70b-versatile"))
+        assertTrue(GroqConstants.PRIORITY_MODELS.contains("meta-llama/llama-4-scout-17b-16e-instruct"))
+
+        GroqModelResolver.clearCache()
+        assertNull(GroqModelResolver.getCachedModel())
+
+        val resolvedFallback = GroqModelResolver.resolveModel("")
+        assertEquals(GroqConstants.DEFAULT_FALLBACK_MODEL, resolvedFallback)
     }
 }

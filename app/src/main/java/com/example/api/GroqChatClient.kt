@@ -16,7 +16,6 @@ class GroqChatClient(
     private val systemInstruction: String
 ) {
     companion object {
-        const val GROQ_MODEL = "llama-3.3-70b-versatile"
         const val GEMINI_TEXT_MODEL = "gemini-2.5-flash"
         private var currentKeyIndex = 0
     }
@@ -30,6 +29,7 @@ class GroqChatClient(
         val textResponse: String,
         val toolCalls: List<ToolCallData> = emptyList(),
         val isFallback: Boolean = false,
+        val modelUsed: String? = null,
         val errorMessage: String? = null
     )
 
@@ -64,62 +64,90 @@ class GroqChatClient(
             currentKeyIndex = (currentKeyIndex + 1) % totalKeys
             attempts++
 
-            try {
-                val jsonBody = JSONObject().apply {
-                    put("model", GROQ_MODEL)
-                    put("messages", JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("role", "system")
-                            put("content", systemInstruction)
-                        })
-                        // Add last ~20 messages history
-                        historyMessages.takeLast(20).forEach { (sender, msg) ->
+            var selectedModel = GroqModelResolver.resolveModel(key)
+            var isModelRetried = false
+
+            while (true) {
+                try {
+                    val jsonBody = JSONObject().apply {
+                        put("model", selectedModel)
+                        put("messages", JSONArray().apply {
                             put(JSONObject().apply {
-                                put("role", if (sender == "user") "user" else "assistant")
-                                put("content", msg)
+                                put("role", "system")
+                                put("content", systemInstruction)
                             })
-                        }
-                        put(JSONObject().apply {
-                            put("role", "user")
-                            put("content", userMessage)
+                            historyMessages.takeLast(20).forEach { (sender, msg) ->
+                                put(JSONObject().apply {
+                                    put("role", if (sender == "user") "user" else "assistant")
+                                    put("content", msg)
+                                })
+                            }
+                            put(JSONObject().apply {
+                                put("role", "user")
+                                put("content", userMessage)
+                            })
                         })
-                    })
-                    put("temperature", 0.7)
-                }
-
-                val request = Request.Builder()
-                    .url("https://api.groq.com/openai/v1/chat/completions")
-                    .addHeader("Authorization", "Bearer $key")
-                    .addHeader("Content-Type", "application/json")
-                    .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
-                    .build()
-
-                val response = httpClient.newCall(request).execute()
-                val responseStr = response.body?.string() ?: ""
-
-                if (response.isSuccessful && responseStr.isNotBlank()) {
-                    val root = JSONObject(responseStr)
-                    val choices = root.optJSONArray("choices")
-                    if (choices != null && choices.length() > 0) {
-                        val choice = choices.getJSONObject(0)
-                        val messageObj = choice.optJSONObject("message")
-                        val content = messageObj?.optString("content", "") ?: ""
-
-                        MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.INFO, "Groq উত্তর সফলভাবে পাওয়া গেছে")
-                        return ChatResponse(textResponse = content)
+                        put("temperature", 0.7)
                     }
-                } else if (response.code == 429 || response.code == 401) {
-                    MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.WARN, "Groq Key রেট লিমিট বা অবৈধ (code=${response.code}), পরবর্তী key চেষ্টা করা হচ্ছে...")
-                    continue
-                } else {
-                    MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.ERROR, "Groq HTTP Error ${response.code}: $responseStr")
+
+                    val request = Request.Builder()
+                        .url("https://api.groq.com/openai/v1/chat/completions")
+                        .addHeader("Authorization", "Bearer $key")
+                        .addHeader("Content-Type", "application/json")
+                        .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                        .build()
+
+                    val response = httpClient.newCall(request).execute()
+                    val responseStr = response.body?.string() ?: ""
+
+                    if (response.isSuccessful && responseStr.isNotBlank()) {
+                        val root = JSONObject(responseStr)
+                        val choices = root.optJSONArray("choices")
+                        if (choices != null && choices.length() > 0) {
+                            val choice = choices.getJSONObject(0)
+                            val messageObj = choice.optJSONObject("message")
+
+                            // Parse content text safely for both llama and gpt-oss models
+                            var contentText: String? = messageObj?.optString("content", null)
+                            if (contentText.isNullOrBlank() || contentText == "null") {
+                                contentText = messageObj?.optString("reasoning", null)
+                            }
+                            if (contentText.isNullOrBlank() || contentText == "null") {
+                                contentText = messageObj?.optString("reasoning_content", null)
+                            }
+                            val finalText = contentText?.takeIf { it != "null" } ?: ""
+
+                            MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.INFO, "Groq উত্তর সফলভাবে পাওয়া গেছে (মডেল: $selectedModel)")
+                            return ChatResponse(textResponse = finalText, modelUsed = selectedModel)
+                        }
+                    } else if (response.code == 404 || responseStr.contains("model_not_found")) {
+                        MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.WARN, "Groq 404 Model Not Found ($selectedModel)। মডেল নতুন করে রিলোভ করে পুনরায় চেষ্টা করা হচ্ছে...")
+                        if (!isModelRetried) {
+                            isModelRetried = true
+                            GroqModelResolver.clearCache()
+                            selectedModel = GroqModelResolver.resolveModel(key, forceRefresh = true)
+                            continue // Retry request once with newly resolved model
+                        } else {
+                            val errorMsg = "Groq ত্রুটি (HTTP 404): মডেল '$selectedModel' অনুপলব্ধ।"
+                            MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.ERROR, errorMsg)
+                            return ChatResponse(textResponse = "", modelUsed = selectedModel, errorMessage = errorMsg)
+                        }
+                    } else if (response.code == 429 || response.code == 401) {
+                        MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.WARN, "Groq Key রেট লিমিট বা অবৈধ (code=${response.code}), পরবর্তী key চেষ্টা করা হচ্ছে...")
+                        break // Try next key in outer loop
+                    } else {
+                        val errorMsg = "Groq এরর (HTTP ${response.code}): $responseStr"
+                        MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.ERROR, errorMsg)
+                        return ChatResponse(textResponse = "", modelUsed = selectedModel, errorMessage = errorMsg)
+                    }
+                } catch (e: Exception) {
+                    MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.ERROR, "Groq নেটওয়ার্ক ত্রুটি: ${e.message}")
+                    break
                 }
-            } catch (e: Exception) {
-                MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.ERROR, "Groq নেটওয়ার্ক ত্রুটি: ${e.message}")
             }
         }
 
-        // All Groq keys failed, check Gemini key fallback
+        // All Groq keys failed, fallback to Gemini
         if (geminiKey.isNotBlank()) {
             return sendGeminiTextMessage(historyMessages, userMessage)
         }
@@ -169,7 +197,7 @@ class GroqChatClient(
                     val parts = contentObj?.optJSONArray("parts")
                     val text = parts?.optJSONObject(0)?.optString("text", "") ?: ""
 
-                    return ChatResponse(textResponse = text, isFallback = true)
+                    return ChatResponse(textResponse = text, isFallback = true, modelUsed = GEMINI_TEXT_MODEL)
                 }
             }
         } catch (e: Exception) {

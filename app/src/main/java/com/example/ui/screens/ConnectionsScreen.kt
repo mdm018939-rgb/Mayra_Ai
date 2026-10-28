@@ -290,7 +290,8 @@ fun ConnectionsScreen(
                                     val client = GroqChatClient(keys, "", "Test")
                                     val res = client.sendMessage(emptyList(), "Hi")
                                     if (res.errorMessage == null) {
-                                        groqTestStatus = "সফল: Groq Key সংযোগ ঠিক আছে! ✓"
+                                        val modelName = res.modelUsed ?: "অজানা"
+                                        groqTestStatus = "সফল: Groq Key সংযোগ ঠিক আছে! ✓\n(চালু মডেল: $modelName)"
                                     } else {
                                         groqTestStatus = "ব্যর্থ: ${res.errorMessage}"
                                     }
