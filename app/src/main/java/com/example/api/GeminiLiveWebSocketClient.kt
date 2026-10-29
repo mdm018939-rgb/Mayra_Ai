@@ -484,6 +484,14 @@ class GeminiLiveWebSocketClient(
                     put("required", JSONArray().apply { put("shortcutName") })
                 })
             })
+            put(JSONObject().apply {
+                put("name", "goBack")
+                put("description", "Navigates back to the previous screen or app using the system Back gesture.")
+                put("parameters", JSONObject().apply {
+                    put("type", "OBJECT")
+                    put("properties", JSONObject())
+                })
+            })
         }
     }
 }

@@ -318,6 +318,22 @@ class MairaVoiceService : Service() {
                     resultObj.put("status", res.status.name)
                     resultObj.put("message", res.message)
                 }
+                "goBack", "back", "go_back" -> {
+                    val service = MairaAccessibilityService.instance
+                    if (service == null) {
+                        resultObj.put("status", DeviceToolExecutor.ToolStatus.UNAVAILABLE.name)
+                        resultObj.put("message", "অ্যাক্সেসিবিলিটি সার্ভিস সক্রিয় নেই। সেটিংসে গিয়ে সেবাটি সক্রিয় করুন।")
+                    } else {
+                        val ok = service.goBack()
+                        if (ok) {
+                            resultObj.put("status", DeviceToolExecutor.ToolStatus.SUCCESS.name)
+                            resultObj.put("message", "পূর্ববর্তী স্ক্রিনে ফিরে যাওয়া হয়েছে।")
+                        } else {
+                            resultObj.put("status", DeviceToolExecutor.ToolStatus.FAILED.name)
+                            resultObj.put("message", "ব্যাক অ্যাকশন সম্পাদন করা সম্ভব হয়নি।")
+                        }
+                    }
+                }
                 else -> {
                     resultObj.put("status", DeviceToolExecutor.ToolStatus.SUCCESS.name)
                     resultObj.put("message", "টুল সফলভাবে সম্পন্ন হয়েছে।")

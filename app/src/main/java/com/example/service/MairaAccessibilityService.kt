@@ -7,6 +7,8 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.example.data.MairaLogger
 import kotlinx.coroutines.*
 
+import android.content.Intent
+
 class MairaAccessibilityService : AccessibilityService() {
 
     companion object {
@@ -30,16 +32,28 @@ class MairaAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
-        isServiceConnected = false
-        instance = null
-        MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "অ্যাক্সেসিবিলিটি সার্ভিস বিচ্ছিন্ন হয়েছে")
+        MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "অ্যাক্সেসিবিলিটি সার্ভিস ইন্টারাপ্ট হয়েছে")
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        if (instance === this) {
+            isServiceConnected = false
+            instance = null
+        }
+        serviceScope.cancel()
+        return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
-        isServiceConnected = false
-        instance = null
+        if (instance === this) {
+            isServiceConnected = false
+            instance = null
+        }
+        serviceScope.cancel()
         super.onDestroy()
     }
+
+    fun goBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
 
     fun findNodeByTextOrContentDescription(root: AccessibilityNodeInfo?, query: String): AccessibilityNodeInfo? {
         if (root == null) return null

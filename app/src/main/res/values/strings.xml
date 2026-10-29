@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Maira</string>
+    <string name="accessibility_service_description">মাইরা ভয়েস অ্যাসিস্ট্যান্টের জন্য অটোমেশন ও নেভিগেশন সুবিধা</string>
 </resources>
