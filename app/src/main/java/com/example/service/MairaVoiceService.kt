@@ -279,19 +279,51 @@ class MairaVoiceService : Service() {
                     resultObj.put("message", res.message)
                 }
                 "callContact" -> {
-                    val contactName = args.optString("name", "")
-                    val contacts = toolExecutor.searchContacts(contactName)
-                    if (contacts.isNotEmpty()) {
-                        val first = contacts.first()
-                        val dialIntent = Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:${first.number}")).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        startActivity(dialIntent)
-                        resultObj.put("status", DeviceToolExecutor.ToolStatus.SUCCESS.name)
-                        resultObj.put("message", "${first.name}-কে কল করতে ডায়াল প্যাড প্রস্তুত করা হয়েছে।")
-                    } else {
+                    if (!android.provider.Settings.canDrawOverlays(this)) {
                         resultObj.put("status", DeviceToolExecutor.ToolStatus.UNAVAILABLE.name)
-                        resultObj.put("message", "'$contactName' নামে কোনো কন্টাক্ট পাওয়া যায়নি।")
+                        resultObj.put("message", "অন্যান্য অ্যাপের উপরে দেখানোর (Display over other apps) অনুমতি দেওয়া নেই। সেটিংসে গিয়ে অনুমতি দিন।")
+                    } else {
+                        val contactName = args.optString("name", "")
+                        val contacts = toolExecutor.searchContacts(contactName)
+                        if (contacts.isNotEmpty()) {
+                            val first = contacts.first()
+                            val dialIntent = Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:${first.number}")).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            try {
+                                startActivity(dialIntent)
+                                val service = MairaAccessibilityService.instance
+                                var isOpened = false
+                                if (service != null && MairaAccessibilityService.isServiceConnected) {
+                                    for (i in 0 until 5) {
+                                        delay(300)
+                                        val fgPkg = service.getForegroundPackage()
+                                        if (fgPkg.isNotBlank() && (fgPkg.lowercase().contains("dialer") || fgPkg.lowercase().contains("phone") || fgPkg.lowercase() != packageName.lowercase())) {
+                                            isOpened = true
+                                            break
+                                        }
+                                    }
+                                }
+                                if (isOpened) {
+                                    resultObj.put("status", DeviceToolExecutor.ToolStatus.SUCCESS.name)
+                                    resultObj.put("message", "${first.name}-কে কল করতে ডায়াল প্যাড প্রস্তুত করা হয়েছে।")
+                                } else {
+                                    toolExecutor.postActionNotification(
+                                        "${first.name}-কে কল করতে স্পর্শ করুন",
+                                        "ডায়াল প্যাড খুলতে নোটিফিকেশনে ট্যাপ করুন।",
+                                        dialIntent
+                                    )
+                                    resultObj.put("status", DeviceToolExecutor.ToolStatus.UNKNOWN.name)
+                                    resultObj.put("message", "ডায়াল প্যাড সরাসরি খোলা সম্ভব হয়নি। একটি নোটিফিকেশন পাঠানো হয়েছে, সেটিতে ট্যাপ করুন।")
+                                }
+                            } catch (e: Exception) {
+                                resultObj.put("status", DeviceToolExecutor.ToolStatus.FAILED.name)
+                                resultObj.put("message", "ডায়ালার খোলা সম্ভব হয়নি: ${e.message}")
+                            }
+                        } else {
+                            resultObj.put("status", DeviceToolExecutor.ToolStatus.UNAVAILABLE.name)
+                            resultObj.put("message", "'$contactName' নামে কোনো কন্টাক্ট পাওয়া যায়নি।")
+                        }
                     }
                 }
                 "playYoutube" -> {
@@ -335,8 +367,8 @@ class MairaVoiceService : Service() {
                     }
                 }
                 else -> {
-                    resultObj.put("status", DeviceToolExecutor.ToolStatus.SUCCESS.name)
-                    resultObj.put("message", "টুল সফলভাবে সম্পন্ন হয়েছে।")
+                    resultObj.put("status", DeviceToolExecutor.ToolStatus.UNAVAILABLE.name)
+                    resultObj.put("message", "'$name' টুলটি বর্তমানে আপনার সিস্টেমে পাওয়া যাচ্ছে না।")
                 }
             }
         } catch (e: Exception) {

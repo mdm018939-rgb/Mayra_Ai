@@ -1,12 +1,20 @@
 package com.example.tools
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraManager
 import android.net.Uri
+import android.os.Build
 import android.provider.ContactsContract
+import android.provider.Settings
+import androidx.core.app.NotificationCompat
+import com.example.R
 import com.example.data.MairaLogger
+import com.example.service.MairaAccessibilityService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -14,6 +22,41 @@ import java.net.URL
 import java.net.URLEncoder
 
 class DeviceToolExecutor(private val context: Context) {
+
+    fun postActionNotification(title: String, text: String, intent: Intent) {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val channelId = "maira_action_channel"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId,
+                    "Maira Actions",
+                    NotificationManager.IMPORTANCE_HIGH
+                )
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                (System.currentTimeMillis() % 10000).toInt(),
+                intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+            val notification = NotificationCompat.Builder(context, channelId)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setSmallIcon(R.drawable.maira_app_icon_1793185004076)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .build()
+
+            notificationManager.notify((System.currentTimeMillis() % 10000).toInt(), notification)
+        } catch (e: Exception) {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "নোটিফিকেশন পোস্ট করতে ব্যর্থ: ${e.message}")
+        }
+    }
 
     private val bangaliAppAliases = mapOf(
         "ফেসবুক" to listOf("facebook", "fb"),
@@ -140,17 +183,48 @@ class DeviceToolExecutor(private val context: Context) {
     }
 
     suspend fun openUrl(urlStr: String): ToolResult = withContext(Dispatchers.IO) {
+        if (!Settings.canDrawOverlays(context)) {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Display over other apps (canDrawOverlays) অনুমতি দেওয়া নেই")
+            return@withContext ToolResult(
+                status = ToolStatus.UNAVAILABLE,
+                message = "অন্যান্য অ্যাপের উপরে দেখানোর (Display over other apps) অনুমতি দেওয়া নেই। সেটিংসে গিয়ে অনুমতি দিন।"
+            )
+        }
+
         var cleanUrl = urlStr.trim()
         if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
             cleanUrl = "https://$cleanUrl"
         }
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
         try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
             context.startActivity(intent)
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "URL খোলা হয়েছে: $cleanUrl")
-            ToolResult(ToolStatus.SUCCESS, "ওয়েবসাইট খোলা হয়েছে।")
+
+            val service = MairaAccessibilityService.instance
+            var isOpened = false
+            if (service != null && MairaAccessibilityService.isServiceConnected) {
+                for (i in 0 until 5) {
+                    kotlinx.coroutines.delay(300)
+                    val fgPkg = service.getForegroundPackage()
+                    if (fgPkg.isNotBlank() && fgPkg.lowercase() != context.packageName.lowercase()) {
+                        isOpened = true
+                        break
+                    }
+                }
+            }
+
+            if (isOpened) {
+                ToolResult(ToolStatus.SUCCESS, "ওয়েবসাইট খোলা হয়েছে।")
+            } else {
+                postActionNotification(
+                    "ওয়েবসাইট খুলতে স্পর্শ করুন",
+                    "ওয়েবসাইটটি সরাসরি খোলা সম্ভব হয়নি। খুলতে নোটিফিকেশনে ট্যাপ করুন।",
+                    intent
+                )
+                ToolResult(ToolStatus.UNKNOWN, "ওয়েবসাইটটি সরাসরি খোলা সম্ভব হয়নি। একটি নোটিফিকেশন পাঠানো হয়েছে, সেটিতে ট্যাপ করুন।")
+            }
         } catch (e: Exception) {
             ToolResult(ToolStatus.FAILED, "ওয়েবসাইট খুলতে সমস্যা হয়েছে: ${e.localizedMessage}")
         }
@@ -316,6 +390,14 @@ class DeviceToolExecutor(private val context: Context) {
         messageText: String,
         askBeforeSending: Boolean = true
     ): ToolResult = withContext(Dispatchers.IO) {
+        if (!Settings.canDrawOverlays(context)) {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Display over other apps (canDrawOverlays) অনুমতি দেওয়া নেই")
+            return@withContext ToolResult(
+                status = ToolStatus.UNAVAILABLE,
+                message = "অন্যান্য অ্যাপের উপরে দেখানোর (Display over other apps) অনুমতি দেওয়া নেই। সেটিংসে গিয়ে অনুমতি দিন।"
+            )
+        }
+
         val cleanRecipient = recipientQuery.trim()
         val cleanMessage = messageText.trim()
 
@@ -395,50 +477,76 @@ class DeviceToolExecutor(private val context: Context) {
             normalizedPhone = norm
         }
 
-        try {
-            val encodedText = URLEncoder.encode(cleanMessage, "UTF-8")
-            val clickToChatUrl = "https://api.whatsapp.com/send?phone=$normalizedPhone&text=$encodedText"
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(clickToChatUrl)).apply {
-                setPackage(targetPackage)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
+        val encodedText = URLEncoder.encode(cleanMessage, "UTF-8")
+        val clickToChatUrl = "https://api.whatsapp.com/send?phone=$normalizedPhone&text=$encodedText"
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(clickToChatUrl)).apply {
+            setPackage(targetPackage)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
 
+        try {
+            var activeIntent = intent
             try {
                 context.startActivity(intent)
             } catch (_: Exception) {
                 try {
                     val fallbackUri = Uri.parse("whatsapp://send?phone=$normalizedPhone&text=$encodedText")
-                    val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri).apply {
+                    activeIntent = Intent(Intent.ACTION_VIEW, fallbackUri).apply {
                         setPackage(targetPackage)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    context.startActivity(fallbackIntent)
+                    context.startActivity(activeIntent)
                 } catch (_: Exception) {
-                    val genericIntent = Intent(Intent.ACTION_VIEW, Uri.parse(clickToChatUrl)).apply {
+                    activeIntent = Intent(Intent.ACTION_VIEW, Uri.parse(clickToChatUrl)).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    context.startActivity(genericIntent)
+                    context.startActivity(activeIntent)
                 }
             }
 
             MairaLogger.log(
                 MairaLogger.Category.ACTION,
                 MairaLogger.Level.INFO,
-                "হোয়াটসঅ্যাপ চ্যাটে মেসেজ প্রস্তুত করা হয়েছে: $resolvedName ($normalizedPhone)"
+                "হোয়াটসঅ্যাপ চ্যাটে মেসেজ প্রস্তুত করার চেষ্টা করা হয়েছে: $resolvedName ($normalizedPhone)"
             )
 
-            // Strict success verification: Do not claim message is sent!
+            var isOpened = false
+            val service = MairaAccessibilityService.instance
+            if (service != null && MairaAccessibilityService.isServiceConnected) {
+                for (i in 0 until 5) {
+                    kotlinx.coroutines.delay(300)
+                    val fgPkg = service.getForegroundPackage()
+                    if (fgPkg.isNotBlank() && (fgPkg.equals(targetPackage, ignoreCase = true) || fgPkg.lowercase().contains("whatsapp"))) {
+                        isOpened = true
+                        break
+                    }
+                }
+            }
+
             val responseMessage = if (askBeforeSending) {
-                "হোয়াটসঅ্যাপে $resolvedName-এর জন্য মেসেজটি প্রস্তুত করা হয়েছে। পাঠানোর আগে দেখে নিশ্চিত হয়ে সেন্ড বাটনে ট্যাপ করুন।"
+                "হোয়াটসঅ্যাপে $resolvedName-এর জন্য মেসেজটি প্রস্তুত করা হয়েছে। পাঠানোর জন্য সেন্ড বাটনে ট্যাপ করুন।"
             } else {
                 "হোয়াটসঅ্যাপে $resolvedName-এর জন্য মেসেজটি প্রস্তুত করা হয়েছে, পাঠানোর জন্য সেন্ড বাটনে ট্যাপ করুন।"
             }
 
-            ToolResult(
-                status = ToolStatus.SUCCESS,
-                message = responseMessage,
-                details = "PREFILLED_OPENED"
-            )
+            if (isOpened) {
+                ToolResult(
+                    status = ToolStatus.SUCCESS,
+                    message = responseMessage,
+                    details = "PREFILLED_OPENED"
+                )
+            } else {
+                postActionNotification(
+                    "WhatsApp চ্যাট খুলতে স্পর্শ করুন",
+                    "$resolvedName-এর WhatsApp চ্যাট খুলতে নোটিফিকেশনে ট্যাপ করুন।",
+                    activeIntent
+                )
+                ToolResult(
+                    status = ToolStatus.UNKNOWN,
+                    message = "হোয়াটসঅ্যাপ চ্যাটটি সরাসরি খোলা সম্ভব হয়নি। একটি নোটিফিকেশন পাঠানো হয়েছে, সেটিতে ট্যাপ করুন।",
+                    details = "NOTIFICATION_POSTED"
+                )
+            }
         } catch (e: Exception) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "হোয়াটসঅ্যাপ চ্যাট খুলতে সমস্যা: ${e.message}")
             ToolResult(
@@ -449,6 +557,14 @@ class DeviceToolExecutor(private val context: Context) {
     }
 
     suspend fun playYoutube(query: String): ToolResult = withContext(Dispatchers.IO) {
+        if (!Settings.canDrawOverlays(context)) {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Display over other apps (canDrawOverlays) অনুমতি দেওয়া নেই")
+            return@withContext ToolResult(
+                status = ToolStatus.UNAVAILABLE,
+                message = "অন্যান্য অ্যাপের উপরে দেখানোর (Display over other apps) অনুমতি দেওয়া নেই। সেটিংসে গিয়ে অনুমতি দিন।"
+            )
+        }
+
         try {
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
             val searchUrl = "https://www.youtube.com/results?search_query=$encodedQuery"
@@ -462,31 +578,51 @@ class DeviceToolExecutor(private val context: Context) {
             val regex = Regex("\"videoId\":\"([a-zA-Z0-9_-]{11})\"")
             val match = regex.find(html)
 
+            val activeIntent: Intent
             if (match != null) {
                 val videoId = match.groupValues[1]
                 val videoUrl = "https://www.youtube.com/watch?v=$videoId"
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(videoUrl)).apply {
+                activeIntent = Intent(Intent.ACTION_VIEW, Uri.parse(videoUrl)).apply {
                     setPackage("com.google.android.youtube")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 try {
-                    context.startActivity(intent)
+                    context.startActivity(activeIntent)
                 } catch (e: Exception) {
                     val fallbackIntent = Intent(Intent.ACTION_VIEW, Uri.parse(videoUrl)).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(fallbackIntent)
                 }
-                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "ইউটিউব গান পাওয়া গেছে ও চালানো হয়েছে")
-                return@withContext ToolResult(ToolStatus.SUCCESS, "ইউটিউবে '$query' চালানো হচ্ছে।")
             } else {
-                // Fallback to search results page
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl)).apply {
+                activeIntent = Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl)).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(intent)
-                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "ইউটিউব নির্দিষ্ট ভিডিও আইডি মেলেনি, সার্চ পেজ খোলা হয়েছে")
-                return@withContext ToolResult(ToolStatus.SUCCESS, "ইউটিউব সার্চ ফলাফল খোলা হয়েছে, পছন্দমতো গানটি বেছে নাও।")
+                context.startActivity(activeIntent)
+            }
+
+            val service = MairaAccessibilityService.instance
+            var isOpened = false
+            if (service != null && MairaAccessibilityService.isServiceConnected) {
+                for (i in 0 until 5) {
+                    kotlinx.coroutines.delay(300)
+                    val fgPkg = service.getForegroundPackage()
+                    if (fgPkg.isNotBlank() && (fgPkg.lowercase().contains("youtube") || fgPkg.lowercase() != context.packageName.lowercase())) {
+                        isOpened = true
+                        break
+                    }
+                }
+            }
+
+            if (isOpened) {
+                ToolResult(ToolStatus.SUCCESS, "ইউটিউবে '$query' চালানো হচ্ছে।")
+            } else {
+                postActionNotification(
+                    "YouTube চালাতে স্পর্শ করুন",
+                    "ইউটিউবে '$query' চালাতে নোটিফিকেশনে ট্যাপ করুন।",
+                    activeIntent
+                )
+                ToolResult(ToolStatus.UNKNOWN, "ইউটিউব সরাসরি খোলা সম্ভব হয়নি। একটি নোটিফিকেশন পাঠানো হয়েছে, সেটিতে ট্যাপ করুন।")
             }
         } catch (e: Exception) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "ইউটিউব গান খোঁজা ব্যর্থ: ${e.message}")
