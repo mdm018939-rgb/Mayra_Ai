@@ -371,6 +371,10 @@ class GeminiLiveWebSocketClient(
                             put("type", "STRING")
                             put("description", "Contact name or relationship alias.")
                         })
+                        put("nameEnglish", JSONObject().apply {
+                            put("type", "STRING")
+                            put("description", "the same person's name written in English letters")
+                        })
                     })
                     put("required", JSONArray().apply { put("name") })
                 })
@@ -403,6 +407,10 @@ class GeminiLiveWebSocketClient(
                             put("type", "STRING")
                             put("description", "Message text")
                         })
+                        put("nameEnglish", JSONObject().apply {
+                            put("type", "STRING")
+                            put("description", "the same person's name written in English letters")
+                        })
                     })
                     put("required", JSONArray().apply {
                         put("recipientName")
@@ -423,6 +431,10 @@ class GeminiLiveWebSocketClient(
                         put("text", JSONObject().apply {
                             put("type", "STRING")
                             put("description", "The message text to send")
+                        })
+                        put("nameEnglish", JSONObject().apply {
+                            put("type", "STRING")
+                            put("description", "the same person's name written in English letters")
                         })
                     })
                     put("required", JSONArray().apply {

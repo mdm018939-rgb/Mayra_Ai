@@ -284,8 +284,16 @@ class MairaVoiceService : Service() {
                         resultObj.put("message", "অন্যান্য অ্যাপের উপরে দেখানোর (Display over other apps) অনুমতি দেওয়া নেই। সেটিংসে গিয়ে অনুমতি দিন।")
                     } else {
                         val contactName = args.optString("name", "")
-                        val contacts = toolExecutor.searchContacts(contactName)
-                        if (contacts.isNotEmpty()) {
+                        val nameEnglish = args.optString("nameEnglish", "").ifBlank { null }
+                        val contacts = toolExecutor.searchContacts(contactName, nameEnglish)
+                        if (contacts.isEmpty()) {
+                            resultObj.put("status", DeviceToolExecutor.ToolStatus.FAILED.name)
+                            resultObj.put("message", "'$contactName' নামে কোনো কন্টাক্ট খুঁজে পাওয়া যায়নি।")
+                        } else if (contacts.size > 1) {
+                            val candidateNames = contacts.map { it.name }.distinct().take(4).joinToString(", ")
+                            resultObj.put("status", DeviceToolExecutor.ToolStatus.UNKNOWN.name)
+                            resultObj.put("message", "'$contactName' নামে একাধিক কন্টাক্ট পাওয়া গেছে: $candidateNames। কার কাছে কল করতে চান স্পষ্ট করে বলুন।")
+                        } else {
                             val first = contacts.first()
                             val dialIntent = Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:${first.number}")).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -320,9 +328,6 @@ class MairaVoiceService : Service() {
                                 resultObj.put("status", DeviceToolExecutor.ToolStatus.FAILED.name)
                                 resultObj.put("message", "ডায়ালার খোলা সম্ভব হয়নি: ${e.message}")
                             }
-                        } else {
-                            resultObj.put("status", DeviceToolExecutor.ToolStatus.UNAVAILABLE.name)
-                            resultObj.put("message", "'$contactName' নামে কোনো কন্টাক্ট পাওয়া যায়নি।")
                         }
                     }
                 }
@@ -342,10 +347,27 @@ class MairaVoiceService : Service() {
                         .ifBlank { args.optString("message", "") }
                         .ifBlank { args.optString("body", "") }
                         .ifBlank { args.optString("content", "") }
+                    val nameEnglish = args.optString("nameEnglish", "").ifBlank { null }
                     val res = toolExecutor.sendWhatsAppMessage(
                         contactName,
                         text,
-                        prefsManager.isAskBeforeSending()
+                        prefsManager.isAskBeforeSending(),
+                        nameEnglish
+                    )
+                    resultObj.put("status", res.status.name)
+                    resultObj.put("message", res.message)
+                }
+                "sendMessengerMessage", "send_messenger_message" -> {
+                    val recipientName = args.optString("recipientName", "")
+                        .ifBlank { args.optString("contactName", "") }
+                        .ifBlank { args.optString("name", "") }
+                    val text = args.optString("text", "")
+                        .ifBlank { args.optString("message", "") }
+                    val nameEnglish = args.optString("nameEnglish", "").ifBlank { null }
+                    val res = toolExecutor.sendMessengerMessage(
+                        recipientName,
+                        text,
+                        nameEnglish
                     )
                     resultObj.put("status", res.status.name)
                     resultObj.put("message", res.message)

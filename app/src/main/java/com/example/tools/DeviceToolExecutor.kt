@@ -311,30 +311,52 @@ class DeviceToolExecutor(private val context: Context) {
 
     data class ContactMatch(val name: String, val number: String)
 
-    suspend fun searchContacts(query: String): List<ContactMatch> = withContext(Dispatchers.IO) {
+    fun normalizeForSearch(str: String?): String {
+        if (str.isNullOrBlank()) return ""
+        val ascii = convertBengaliDigitsToAscii(str).lowercase().trim()
+        return ascii.replace(Regex("[^\\p{L}\\p{N}]"), "")
+    }
+
+    suspend fun searchContacts(query: String, nameEnglish: String? = null): List<ContactMatch> = withContext(Dispatchers.IO) {
         if (context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             MairaLogger.log(MairaLogger.Category.PERMISSION, MairaLogger.Level.WARN, "যোগাযোগের অনুমতি নাই (READ_CONTACTS)")
             return@withContext emptyList()
         }
 
         val rawClean = query.lowercase().trim()
-        if (rawClean.isBlank()) return@withContext emptyList()
+        if (rawClean.isBlank() && nameEnglish.isNullOrBlank()) return@withContext emptyList()
 
         val candidateQueries = mutableListOf<String>()
-        candidateQueries.add(rawClean)
-        if (rawClean.endsWith("কে") && rawClean.length > 2) {
-            candidateQueries.add(rawClean.removeSuffix("কে").trim())
-        }
-        if (rawClean.endsWith("রে") && rawClean.length > 2) {
-            candidateQueries.add(rawClean.removeSuffix("রে").trim())
-        }
-        if (rawClean.endsWith("এর") && rawClean.length > 2) {
-            candidateQueries.add(rawClean.removeSuffix("এর").trim())
+        if (rawClean.isNotBlank()) {
+            candidateQueries.add(rawClean)
+            if (rawClean.endsWith("কে") && rawClean.length > 2) {
+                candidateQueries.add(rawClean.removeSuffix("কে").trim())
+            }
+            if (rawClean.endsWith("রে") && rawClean.length > 2) {
+                candidateQueries.add(rawClean.removeSuffix("রে").trim())
+            }
+            if (rawClean.endsWith("এর") && rawClean.length > 2) {
+                candidateQueries.add(rawClean.removeSuffix("এর").trim())
+            }
         }
 
-        val allAliases = candidateQueries.flatMap { q ->
+        if (!nameEnglish.isNullOrBlank()) {
+            val engClean = nameEnglish.lowercase().trim()
+            if (engClean.isNotBlank()) {
+                candidateQueries.add(engClean)
+            }
+        }
+
+        val allRawAliases = candidateQueries.flatMap { q ->
             relationshipAliases[q] ?: listOf(q)
         }.distinct()
+
+        val normalizedAliases = allRawAliases
+            .map { normalizeForSearch(it) }
+            .filter { it.length >= 2 }
+            .distinct()
+
+        if (normalizedAliases.isEmpty()) return@withContext emptyList()
 
         val results = mutableListOf<ContactMatch>()
         val cr = context.contentResolver
@@ -353,11 +375,12 @@ class DeviceToolExecutor(private val context: Context) {
             while (c.moveToNext()) {
                 val displayName = if (nameIdx >= 0) c.getString(nameIdx) ?: "" else ""
                 val phoneNum = if (numIdx >= 0) c.getString(numIdx) ?: "" else ""
-                val lowerName = displayName.lowercase().trim()
 
-                val isMatched = allAliases.any { alias ->
-                    val cleanAlias = alias.lowercase().trim()
-                    lowerName.contains(cleanAlias) || cleanAlias.contains(lowerName)
+                val normContactName = normalizeForSearch(displayName)
+                if (normContactName.length < 2) continue
+
+                val isMatched = normalizedAliases.any { normAlias ->
+                    normContactName.contains(normAlias) || normAlias.contains(normContactName)
                 }
 
                 if (isMatched && phoneNum.isNotBlank()) {
@@ -380,7 +403,7 @@ class DeviceToolExecutor(private val context: Context) {
         MairaLogger.log(
             MairaLogger.Category.ACTION,
             MairaLogger.Level.INFO,
-            "কন্টাক্ট সার্চ করা হয়েছে: '$rawClean', পাওয়া গেছে: ${deduplicated.size} টি"
+            "কন্টাক্ট সার্চ করা হয়েছে: query='$rawClean', nameEnglish='$nameEnglish', পাওয়া গেছে: ${deduplicated.size} টি"
         )
         deduplicated
     }
@@ -388,7 +411,8 @@ class DeviceToolExecutor(private val context: Context) {
     suspend fun sendWhatsAppMessage(
         recipientQuery: String,
         messageText: String,
-        askBeforeSending: Boolean = true
+        askBeforeSending: Boolean = true,
+        nameEnglish: String? = null
     ): ToolResult = withContext(Dispatchers.IO) {
         if (!Settings.canDrawOverlays(context)) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Display over other apps (canDrawOverlays) অনুমতি দেওয়া নেই")
@@ -444,10 +468,10 @@ class DeviceToolExecutor(private val context: Context) {
                 return@withContext ToolResult(ToolStatus.UNAVAILABLE, "কন্টাক্ট নম্বর খুঁজে পেতে কন্টাক্ট পারমিশন (READ_CONTACTS) প্রয়োজন। সেটিংসে গিয়ে অনুমতি দিন।")
             }
 
-            val matches = searchContacts(cleanRecipient)
+            val matches = searchContacts(cleanRecipient, nameEnglish)
             if (matches.isEmpty()) {
                 MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "কন্টাক্ট পাওয়া যায়নি: $cleanRecipient")
-                return@withContext ToolResult(ToolStatus.UNAVAILABLE, "'$cleanRecipient' নামে কোনো কন্টাক্ট নম্বর খুঁজে পাওয়া যায়নি।")
+                return@withContext ToolResult(ToolStatus.FAILED, "'$cleanRecipient' নামে কোনো কন্টাক্ট নম্বর খুঁজে পাওয়া যায়নি।")
             }
 
             val selectedMatch: ContactMatch
@@ -627,6 +651,93 @@ class DeviceToolExecutor(private val context: Context) {
         } catch (e: Exception) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "ইউটিউব গান খোঁজা ব্যর্থ: ${e.message}")
             ToolResult(ToolStatus.FAILED, "ইউটিউবে গান খুঁজতে সমস্যা হয়েছে।")
+        }
+    }
+
+    suspend fun sendMessengerMessage(
+        recipientName: String,
+        text: String,
+        nameEnglish: String? = null
+    ): ToolResult = withContext(Dispatchers.IO) {
+        if (!Settings.canDrawOverlays(context)) {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Display over other apps (canDrawOverlays) অনুমতি দেওয়া নেই")
+            return@withContext ToolResult(
+                status = ToolStatus.UNAVAILABLE,
+                message = "অন্যান্য অ্যাপের উপরে দেখানোর (Display over other apps) অনুমতি দেওয়া নেই। সেটিংসে গিয়ে অনুমতি দিন।"
+            )
+        }
+
+        val cleanRecipient = recipientName.trim()
+        val cleanText = text.trim()
+
+        if (cleanRecipient.isBlank()) {
+            return@withContext ToolResult(ToolStatus.FAILED, "কার কাছে Messenger মেসেজ পাঠাতে চান বলুন।")
+        }
+        if (cleanText.isBlank()) {
+            return@withContext ToolResult(ToolStatus.FAILED, "কী মেসেজ পাঠাতে চান তা বলুন।")
+        }
+
+        if (!isPackageInstalled("com.facebook.orca")) {
+            return@withContext ToolResult(ToolStatus.UNAVAILABLE, "আপনার ফোনে Messenger অ্যাপ ইনস্টল করা নেই।")
+        }
+
+        if (context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            return@withContext ToolResult(ToolStatus.UNAVAILABLE, "কন্টাক্ট নম্বর খুঁজে পেতে কন্টাক্ট পারমিশন (READ_CONTACTS) প্রয়োজন। সেটিংসে গিয়ে অনুমতি দিন।")
+        }
+
+        val matches = searchContacts(cleanRecipient, nameEnglish)
+        if (matches.isEmpty()) {
+            return@withContext ToolResult(ToolStatus.FAILED, "'$cleanRecipient' নামে কোনো কন্টাক্ট খুঁজে পাওয়া যায়নি।")
+        }
+
+        if (matches.size > 1) {
+            val candidateNames = matches.map { it.name }.distinct().take(4).joinToString(", ")
+            return@withContext ToolResult(ToolStatus.UNKNOWN, "'$cleanRecipient' নামে একাধিক কন্টাক্ট পাওয়া গেছে: $candidateNames। কার কাছে মেসেজ পাঠাতে চান স্পষ্ট করে বলুন।")
+        }
+
+        val selectedMatch = matches.first()
+        val targetPkg = "com.facebook.orca"
+        val launchIntent = context.packageManager.getLaunchIntentForPackage(targetPkg)?.apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        if (launchIntent != null) {
+            try {
+                context.startActivity(launchIntent)
+                val service = MairaAccessibilityService.instance
+                var isOpened = false
+                if (service != null && MairaAccessibilityService.isServiceConnected) {
+                    for (i in 0 until 5) {
+                        kotlinx.coroutines.delay(300)
+                        val fgPkg = service.getForegroundPackage()
+                        if (fgPkg.isNotBlank() && fgPkg.lowercase().contains("orca")) {
+                            isOpened = true
+                            break
+                        }
+                    }
+                }
+
+                if (isOpened) {
+                    ToolResult(
+                        status = ToolStatus.SUCCESS,
+                        message = "মেসেঞ্জারে ${selectedMatch.name}-এর জন্য চ্যাট খোলা হয়েছে।"
+                    )
+                } else {
+                    postActionNotification(
+                        "Messenger চ্যাট খুলতে স্পর্শ করুন",
+                        "${selectedMatch.name}-এর সাথে চ্যাট করতে মেসেঞ্জার খুলুন।",
+                        launchIntent
+                    )
+                    ToolResult(
+                        status = ToolStatus.UNKNOWN,
+                        message = "মেসেঞ্জার চ্যাট সরাসরি খোলা সম্ভব হয়নি। একটি নোটিফিকেশন পাঠানো হয়েছে, সেটিতে ট্যাপ করুন।"
+                    )
+                }
+            } catch (e: Exception) {
+                ToolResult(ToolStatus.FAILED, "মেসেঞ্জার চ্যাট খোলা সম্ভব হয়নি: ${e.localizedMessage}")
+            }
+        } else {
+            ToolResult(ToolStatus.FAILED, "মেসেঞ্জার অ্যাপ চালু করা যাচ্ছে না।")
         }
     }
 }

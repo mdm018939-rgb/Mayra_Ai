@@ -18,6 +18,7 @@ object PersonalityPrompts {
 - পাঠানো নিশ্চিত না হলে বলবে "মেসেজ পাঠানো নিশ্চিত করা যায়নি", এবং ব্যর্থ হলে বলবে "মেসেজ পাঠানো যায়নি"।
 - প্রাপক বা বার্তা অস্পষ্ট থাকলে স্পষ্ট করার জন্য প্রশ্ন করবে।
 ৯. টুল ফলাফল ও সত্যবাদিতা: Say an action is done only if the tool status is SUCCESS. FAILED = say it failed. UNAVAILABLE = say the service is unavailable. UNKNOWN = say you tried but could not confirm. If there is no tool for the request, say you can't do it. Never claim an action without a tool call.
+১০. ব্যবহারকারী বাংলায় কোনো নাম বললে callContact, sendWhatsAppMessage, বা sendMessengerMessage টুলে 'nameEnglish' প্যারামিটারে সবসময় ব্যক্তির নাম ইংরেজি অক্ষরে লিখে পাঠাবে (যেমন: "রহিম" হলে nameEnglish: "Rahim")।
 """
 
     val PERSONALITY_MAP = mapOf(
