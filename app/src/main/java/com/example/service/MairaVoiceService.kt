@@ -294,12 +294,29 @@ class MairaVoiceService : Service() {
                     val res = toolExecutor.playYoutube(query)
                     resultObj.put("result", res.message)
                 }
+                "sendWhatsAppMessage", "sendMessage", "send_whatsapp_message" -> {
+                    val contactName = args.optString("contactName", "")
+                        .ifBlank { args.optString("recipientName", "") }
+                        .ifBlank { args.optString("name", "") }
+                        .ifBlank { args.optString("phone", "") }
+                        .ifBlank { args.optString("recipient", "") }
+                    val text = args.optString("text", "")
+                        .ifBlank { args.optString("message", "") }
+                        .ifBlank { args.optString("body", "") }
+                        .ifBlank { args.optString("content", "") }
+                    val res = toolExecutor.sendWhatsAppMessage(
+                        contactName,
+                        text,
+                        prefsManager.isAskBeforeSending()
+                    )
+                    resultObj.put("result", res.message)
+                }
                 else -> {
                     resultObj.put("result", "টুল সফলভাবে সম্পন্ন হয়েছে।")
                 }
             }
         } catch (e: Exception) {
-            resultObj.put("result", "টুল কার্যকর করতে সমস্যা হয়েছে: ${e.message}")
+            resultObj.put("result", "মেসেজ পাঠানো যায়নি: ${e.message}")
         }
         return resultObj
     }

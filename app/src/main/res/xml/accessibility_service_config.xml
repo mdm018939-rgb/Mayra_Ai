@@ -5,5 +5,5 @@
     android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagReportViewIds"
     android:canRetrieveWindowContent="true"
     android:canPerformGestures="true"
-    android:packageNames="com.facebook.orca,com.facebook.katana,com.whatsapp"
+    android:packageNames="com.facebook.orca,com.facebook.katana"
     android:notificationTimeout="100" />

@@ -117,4 +117,44 @@ class MairaLogicUnitTest {
         assertFalse(isExplicitStop("আমি আজকে বাজারে গিয়েছিলাম এবং অনেক কথা হয়েছে"))
         assertFalse(isExplicitStop("মাইরা তুমি কেমন আছো"))
     }
+
+    @Test
+    fun testBengaliDigitConversion() {
+        val bengaliNumber = "০১৭১২৩৪৫৬৭৮"
+        val converted = com.example.tools.DeviceToolExecutor.convertBengaliDigitsToAscii(bengaliNumber)
+        assertEquals("01712345678", converted)
+
+        val mixed = "+৮৮০১ ৮৯-৯৯-৮৮৮৮"
+        val convertedMixed = com.example.tools.DeviceToolExecutor.convertBengaliDigitsToAscii(mixed)
+        assertEquals("+8801 89-99-8888", convertedMixed)
+    }
+
+    @Test
+    fun testPhoneNumberNormalization() {
+        // Standard Bangladeshi numbers
+        assertEquals("8801712345678", com.example.tools.DeviceToolExecutor.normalizePhoneNumber("01712345678"))
+        assertEquals("8801712345678", com.example.tools.DeviceToolExecutor.normalizePhoneNumber("+8801712345678"))
+        assertEquals("8801712345678", com.example.tools.DeviceToolExecutor.normalizePhoneNumber("০১৭১২৩৪৫৬৭৮"))
+        assertEquals("8801712345678", com.example.tools.DeviceToolExecutor.normalizePhoneNumber("008801712345678"))
+        assertEquals("8801899998888", com.example.tools.DeviceToolExecutor.normalizePhoneNumber("018-9999-8888"))
+
+        // International numbers
+        assertEquals("14155552671", com.example.tools.DeviceToolExecutor.normalizePhoneNumber("+14155552671"))
+
+        // Invalid numbers
+        assertNull(com.example.tools.DeviceToolExecutor.normalizePhoneNumber("123"))
+        assertNull(com.example.tools.DeviceToolExecutor.normalizePhoneNumber(""))
+        assertNull(com.example.tools.DeviceToolExecutor.normalizePhoneNumber("invalid"))
+    }
+
+    @Test
+    fun testTruthfulWhatsAppInstructionMessage() {
+        // Hard rules must forbid claiming "মেসেজ পাঠানো হয়েছে" without actual verified send
+        val rules = PersonalityPrompts.getSystemInstruction("সাধারণ", "রহিম")
+        assertTrue(rules.contains("sendWhatsAppMessage"))
+        assertTrue(rules.contains("কখনোই নিজে থেকে বলবে না \"মেসেজ পাঠানো হয়েছে\""))
+        assertTrue(rules.contains("মেসেজটি প্রস্তুত করা হয়েছে, পাঠানোর জন্য সেন্ড বাটনে ট্যাপ করুন।"))
+        assertTrue(rules.contains("মেসেজ পাঠানো যায়নি"))
+    }
 }
+

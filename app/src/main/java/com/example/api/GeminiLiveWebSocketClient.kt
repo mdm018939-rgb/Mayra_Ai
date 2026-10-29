@@ -412,17 +412,17 @@ class GeminiLiveWebSocketClient(
             })
             put(JSONObject().apply {
                 put("name", "sendWhatsAppMessage")
-                put("description", "Sends a message to a contact on WhatsApp.")
+                put("description", "Prepares a WhatsApp message to a contact by opening the chat with prefilled text for user confirmation and sending.")
                 put("parameters", JSONObject().apply {
                     put("type", "OBJECT")
                     put("properties", JSONObject().apply {
                         put("contactName", JSONObject().apply {
                             put("type", "STRING")
-                            put("description", "Contact name")
+                            put("description", "Contact name, relationship (e.g. মা, বাবা, রহিম), or phone number")
                         })
                         put("text", JSONObject().apply {
                             put("type", "STRING")
-                            put("description", "Message text")
+                            put("description", "The message text to send")
                         })
                     })
                     put("required", JSONArray().apply {

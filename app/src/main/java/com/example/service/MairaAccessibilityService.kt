@@ -104,31 +104,10 @@ class MairaAccessibilityService : AccessibilityService() {
         return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
-    // Automation: Tap WhatsApp Send
+    // Note: WhatsApp messaging uses supported Android Intent and click-to-chat URL,
+    // and does NOT rely on AccessibilityService.
     fun automateWhatsAppSend(onResult: (Boolean, String) -> Unit) {
-        serviceScope.launch {
-            var attempts = 0
-            var sent = false
-            while (attempts < 10 && !sent) {
-                delay(1000)
-                attempts++
-                val root = rootInActiveWindow ?: continue
-                val sendButton = findNodeByTextOrContentDescription(root, "send")
-                    ?: findNodeByTextOrContentDescription(root, "পাঠাও")
-                    ?: findNodeByTextOrContentDescription(root, "পাঠান")
-
-                if (sendButton != null) {
-                    performClickOnNode(sendButton)
-                    sent = true
-                    MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "হোয়াটসঅ্যাপ বার্তা পাঠানো বাটন ট্যাপ করা হয়েছে")
-                }
-            }
-
-            if (sent) {
-                onResult(true, "হোয়াটসঅ্যাপ বার্তা পাঠানো হয়েছে।")
-            } else {
-                onResult(false, "হোয়াটসঅ্যাপ সেন্ড বাটন পাওয়া যায়নি। ড্রাফট রাখা হয়েছে।")
-            }
-        }
+        MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "অ্যাক্সেসিবিলিটি সার্ভিস দিয়ে হোয়াটসঅ্যাপ অটোমেশন নিষ্ক্রিয়।")
+        onResult(false, "মেসেজ পাঠানো নিশ্চিত করা যায়নি")
     }
 }

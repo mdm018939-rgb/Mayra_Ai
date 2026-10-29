@@ -127,6 +127,64 @@ class DeviceToolExecutor(private val context: Context) {
         }
     }
 
+    companion object {
+        fun convertBengaliDigitsToAscii(str: String): String {
+            val bengaliDigits = "০১২৩৪৫৬৭৮৯"
+            val sb = java.lang.StringBuilder()
+            for (ch in str) {
+                val idx = bengaliDigits.indexOf(ch)
+                if (idx != -1) {
+                    sb.append(idx)
+                } else {
+                    sb.append(ch)
+                }
+            }
+            return sb.toString()
+        }
+
+        fun normalizePhoneNumber(raw: String): String? {
+            if (raw.isBlank()) return null
+            val asciiRaw = convertBengaliDigitsToAscii(raw)
+            val hasPlus = asciiRaw.trim().startsWith("+")
+            val digitsOnly = asciiRaw.replace(Regex("[^0-9]"), "")
+            if (digitsOnly.length < 6) return null
+
+            val cleanedDigits = if (digitsOnly.startsWith("00")) digitsOnly.substring(2) else digitsOnly
+
+            return when {
+                // Bangladeshi mobile standard: 01XXXXXXXXX (11 digits starting with 01)
+                cleanedDigits.startsWith("01") && cleanedDigits.length == 11 -> {
+                    "88$cleanedDigits"
+                }
+                // Bangladeshi mobile with country code without plus: 8801XXXXXXXXX (13 digits)
+                cleanedDigits.startsWith("8801") && cleanedDigits.length == 13 -> {
+                    cleanedDigits
+                }
+                // International with leading plus or length 7-15
+                hasPlus && cleanedDigits.length in 7..15 -> {
+                    cleanedDigits
+                }
+                cleanedDigits.length in 8..15 -> {
+                    cleanedDigits
+                }
+                else -> null
+            }
+        }
+    }
+
+    fun isPackageInstalled(packageName: String): Boolean {
+        return try {
+            context.packageManager.getPackageInfo(packageName, 0)
+            true
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        }
+    }
+
+    fun isWhatsAppInstalled(): Boolean {
+        return isPackageInstalled("com.whatsapp") || isPackageInstalled("com.whatsapp.w4b")
+    }
+
     data class ContactMatch(val name: String, val number: String)
 
     suspend fun searchContacts(query: String): List<ContactMatch> = withContext(Dispatchers.IO) {
@@ -135,8 +193,24 @@ class DeviceToolExecutor(private val context: Context) {
             return@withContext emptyList()
         }
 
-        val cleanQuery = query.lowercase().trim()
-        val aliasList = relationshipAliases[cleanQuery] ?: listOf(cleanQuery)
+        val rawClean = query.lowercase().trim()
+        if (rawClean.isBlank()) return@withContext emptyList()
+
+        val candidateQueries = mutableListOf<String>()
+        candidateQueries.add(rawClean)
+        if (rawClean.endsWith("কে") && rawClean.length > 2) {
+            candidateQueries.add(rawClean.removeSuffix("কে").trim())
+        }
+        if (rawClean.endsWith("রে") && rawClean.length > 2) {
+            candidateQueries.add(rawClean.removeSuffix("রে").trim())
+        }
+        if (rawClean.endsWith("এর") && rawClean.length > 2) {
+            candidateQueries.add(rawClean.removeSuffix("এর").trim())
+        }
+
+        val allAliases = candidateQueries.flatMap { q ->
+            relationshipAliases[q] ?: listOf(q)
+        }.distinct()
 
         val results = mutableListOf<ContactMatch>()
         val cr = context.contentResolver
@@ -155,10 +229,11 @@ class DeviceToolExecutor(private val context: Context) {
             while (c.moveToNext()) {
                 val displayName = if (nameIdx >= 0) c.getString(nameIdx) ?: "" else ""
                 val phoneNum = if (numIdx >= 0) c.getString(numIdx) ?: "" else ""
-                val lowerName = displayName.lowercase()
+                val lowerName = displayName.lowercase().trim()
 
-                val isMatched = aliasList.any { alias ->
-                    lowerName.contains(alias) || alias.contains(lowerName)
+                val isMatched = allAliases.any { alias ->
+                    val cleanAlias = alias.lowercase().trim()
+                    lowerName.contains(cleanAlias) || cleanAlias.contains(lowerName)
                 }
 
                 if (isMatched && phoneNum.isNotBlank()) {
@@ -167,12 +242,160 @@ class DeviceToolExecutor(private val context: Context) {
             }
         }
 
+        // Deduplicate contacts by (name, normalized number)
+        val deduplicated = mutableListOf<ContactMatch>()
+        val seen = mutableSetOf<String>()
+        for (m in results) {
+            val norm = normalizePhoneNumber(m.number) ?: m.number.replace(Regex("[^0-9]"), "")
+            val key = "${m.name.trim().lowercase()}:$norm"
+            if (seen.add(key)) {
+                deduplicated.add(m)
+            }
+        }
+
         MairaLogger.log(
             MairaLogger.Category.ACTION,
             MairaLogger.Level.INFO,
-            "কন্টাক্ট সার্চ করা হয়েছে: '$cleanQuery', পাওয়া গেছে: ${results.size} টি"
+            "কন্টাক্ট সার্চ করা হয়েছে: '$rawClean', পাওয়া গেছে: ${deduplicated.size} টি"
         )
-        results
+        deduplicated
+    }
+
+    suspend fun sendWhatsAppMessage(
+        recipientQuery: String,
+        messageText: String,
+        askBeforeSending: Boolean = true
+    ): ToolResult = withContext(Dispatchers.IO) {
+        val cleanRecipient = recipientQuery.trim()
+        val cleanMessage = messageText.trim()
+
+        if (cleanRecipient.isBlank()) {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "হোয়াটসঅ্যাপ মেসেজ: প্রাপকের নাম অনুপস্থিত")
+            return@withContext ToolResult(false, "কার কাছে WhatsApp মেসেজ পাঠাতে চান বলুন।")
+        }
+
+        if (cleanMessage.isBlank()) {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "হোয়াটসঅ্যাপ মেসেজ: মেসেজ ফাঁকা")
+            return@withContext ToolResult(false, "কী মেসেজ পাঠাতে চান তা বলুন।")
+        }
+
+        val isStandardInstalled = isPackageInstalled("com.whatsapp")
+        val isBusinessInstalled = isPackageInstalled("com.whatsapp.w4b")
+        if (!isStandardInstalled && !isBusinessInstalled) {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "হোয়াটসঅ্যাপ অ্যাপ ইনস্টল করা নেই")
+            return@withContext ToolResult(false, "আপনার ফোনে WhatsApp ইনস্টল করা নেই। প্লে স্টোর থেকে ইনস্টল করুন।")
+        }
+        val targetPackage = if (isStandardInstalled) "com.whatsapp" else "com.whatsapp.w4b"
+
+        val asciiRecipient = convertBengaliDigitsToAscii(cleanRecipient)
+        val recipientDigits = asciiRecipient.replace(Regex("[^0-9]"), "")
+        val isDirectPhoneNumber = recipientDigits.length >= 7 && (
+            asciiRecipient.startsWith("+") ||
+            asciiRecipient.startsWith("01") ||
+            asciiRecipient.startsWith("8801") ||
+            asciiRecipient.matches(Regex("^[+0-9\\s()-]+$"))
+        )
+
+        var resolvedName: String
+        val normalizedPhone: String
+
+        if (isDirectPhoneNumber) {
+            val norm = normalizePhoneNumber(asciiRecipient)
+            if (norm == null) {
+                return@withContext ToolResult(false, "ফোন নম্বরটি সঠিক ফরম্যাটে নেই।")
+            }
+            resolvedName = cleanRecipient
+            normalizedPhone = norm
+        } else {
+            if (context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+                MairaLogger.log(MairaLogger.Category.PERMISSION, MairaLogger.Level.WARN, "READ_CONTACTS পারমিশন নাই")
+                return@withContext ToolResult(false, "কন্টাক্ট নম্বর খুঁজে পেতে কন্টাক্ট পারমিশন (READ_CONTACTS) প্রয়োজন। সেটিংসে গিয়ে অনুমতি দিন।")
+            }
+
+            val matches = searchContacts(cleanRecipient)
+            if (matches.isEmpty()) {
+                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "কন্টাক্ট পাওয়া যায়নি: $cleanRecipient")
+                return@withContext ToolResult(false, "'$cleanRecipient' নামে কোনো কন্টাক্ট নম্বর খুঁজে পাওয়া যায়নি।")
+            }
+
+            val selectedMatch: ContactMatch
+            if (matches.size == 1) {
+                selectedMatch = matches.first()
+            } else {
+                val stripped = cleanRecipient.removeSuffix("কে").removeSuffix("রে").removeSuffix("এর").trim()
+                val exactMatches = matches.filter {
+                    it.name.trim().equals(cleanRecipient, ignoreCase = true) ||
+                    it.name.trim().equals(stripped, ignoreCase = true)
+                }
+                if (exactMatches.size == 1) {
+                    selectedMatch = exactMatches.first()
+                } else {
+                    val candidateNames = matches.map { it.name }.distinct().take(4).joinToString(", ")
+                    MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "একাধিক কন্টাক্ট পাওয়া গেছে: $candidateNames")
+                    return@withContext ToolResult(false, "'$cleanRecipient' নামে একাধিক কন্টাক্ট পাওয়া গেছে: $candidateNames। কার কাছে পাঠাতে চান স্পষ্ট করে বলুন।")
+                }
+            }
+
+            resolvedName = selectedMatch.name
+            val norm = normalizePhoneNumber(selectedMatch.number)
+            if (norm == null) {
+                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "ফোন নম্বর সঠিক নয়: ${selectedMatch.number}")
+                return@withContext ToolResult(false, "${selectedMatch.name}-এর ফোন নম্বরটি সঠিক ফরম্যাটে নেই।")
+            }
+            normalizedPhone = norm
+        }
+
+        try {
+            val encodedText = URLEncoder.encode(cleanMessage, "UTF-8")
+            val clickToChatUrl = "https://api.whatsapp.com/send?phone=$normalizedPhone&text=$encodedText"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(clickToChatUrl)).apply {
+                setPackage(targetPackage)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            try {
+                context.startActivity(intent)
+            } catch (_: Exception) {
+                try {
+                    val fallbackUri = Uri.parse("whatsapp://send?phone=$normalizedPhone&text=$encodedText")
+                    val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri).apply {
+                        setPackage(targetPackage)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(fallbackIntent)
+                } catch (_: Exception) {
+                    val genericIntent = Intent(Intent.ACTION_VIEW, Uri.parse(clickToChatUrl)).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(genericIntent)
+                }
+            }
+
+            MairaLogger.log(
+                MairaLogger.Category.ACTION,
+                MairaLogger.Level.INFO,
+                "হোয়াটসঅ্যাপ চ্যাটে মেসেজ প্রস্তুত করা হয়েছে: $resolvedName ($normalizedPhone)"
+            )
+
+            // Strict success verification: Do not claim message is sent!
+            val responseMessage = if (askBeforeSending) {
+                "হোয়াটসঅ্যাপে $resolvedName-এর জন্য মেসেজটি প্রস্তুত করা হয়েছে। পাঠানোর আগে দেখে নিশ্চিত হয়ে সেন্ড বাটনে ট্যাপ করুন।"
+            } else {
+                "হোয়াটসঅ্যাপে $resolvedName-এর জন্য মেসেজটি প্রস্তুত করা হয়েছে, পাঠানোর জন্য সেন্ড বাটনে ট্যাপ করুন।"
+            }
+
+            ToolResult(
+                success = true,
+                message = responseMessage,
+                details = "PREFILLED_OPENED"
+            )
+        } catch (e: Exception) {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "হোয়াটসঅ্যাপ চ্যাট খুলতে সমস্যা: ${e.message}")
+            ToolResult(
+                success = false,
+                message = "মেসেজ পাঠানো যায়নি: হোয়াটসঅ্যাপ চ্যাট খোলা সম্ভব হয়নি।"
+            )
+        }
     }
 
     suspend fun playYoutube(query: String): ToolResult = withContext(Dispatchers.IO) {

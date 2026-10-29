@@ -35,4 +35,30 @@ class ExampleRobolectricTest {
     prefsManager.setOverlayEnabled(false)
     assertEquals(false, prefsManager.isOverlayEnabled())
   }
+
+  @Test
+  fun `whatsapp tool validates missing recipient and message`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val toolExecutor = com.example.tools.DeviceToolExecutor(context)
+
+    // Missing recipient
+    val emptyRecipientResult = toolExecutor.sendWhatsAppMessage("", "হ্যালো")
+    org.junit.Assert.assertFalse(emptyRecipientResult.success)
+    org.junit.Assert.assertTrue(emptyRecipientResult.message.contains("কার কাছে"))
+
+    // Missing text
+    val emptyTextResult = toolExecutor.sendWhatsAppMessage("রহিম", "")
+    org.junit.Assert.assertFalse(emptyTextResult.success)
+    org.junit.Assert.assertTrue(emptyTextResult.message.contains("কী মেসেজ"))
+  }
+
+  @Test
+  fun `whatsapp tool detects when whatsapp is not installed`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val toolExecutor = com.example.tools.DeviceToolExecutor(context)
+
+    val res = toolExecutor.sendWhatsAppMessage("01712345678", "আমি আসছি")
+    org.junit.Assert.assertFalse(res.success)
+    org.junit.Assert.assertTrue(res.message.contains("ইনস্টল করা নেই"))
+  }
 }
