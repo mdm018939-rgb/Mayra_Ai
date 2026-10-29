@@ -36,6 +36,18 @@ class DeviceToolExecutor(private val context: Context) {
                 notificationManager.createNotificationChannel(channel)
             }
 
+            val hasPostNotifPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+            val notifsEnabled = notificationManager.areNotificationsEnabled()
+            MairaLogger.log(
+                MairaLogger.Category.ACTION,
+                MairaLogger.Level.INFO,
+                "postActionNotification: POST_NOTIFICATIONS granted=$hasPostNotifPermission, areNotificationsEnabled=$notifsEnabled"
+            )
+
             val pendingIntent = PendingIntent.getActivity(
                 context,
                 (System.currentTimeMillis() % 10000).toInt(),
@@ -152,43 +164,54 @@ class DeviceToolExecutor(private val context: Context) {
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             try {
+                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "before startActivity (openApp: $targetPkg, overlayRunning=${com.example.service.MairaOverlayService.isOverlayShowing})")
                 context.startActivity(launchIntent)
                 MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "অ্যাপ খোলার চেষ্টা করা হয়েছে: $appLabel ($targetPkg)")
 
                 val service = com.example.service.MairaAccessibilityService.instance
+                val res: ToolResult
                 if (service != null && com.example.service.MairaAccessibilityService.isServiceConnected) {
                     var isOpened = false
                     for (i in 0 until 5) {
                         kotlinx.coroutines.delay(300)
                         val fgPkg = service.getForegroundPackage()
+                        MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "openApp polling attempt $i: foregroundPackage='$fgPkg'")
                         if (fgPkg.isNotBlank() && (fgPkg.equals(targetPkg, ignoreCase = true) || fgPkg.lowercase().contains(targetPkg.lowercase()))) {
                             isOpened = true
                             break
                         }
                     }
-                    return@withContext if (isOpened) {
+                    res = if (isOpened) {
                         ToolResult(ToolStatus.SUCCESS, "$appLabel অ্যাপটি খোলা হয়েছে।")
                     } else {
                         ToolResult(ToolStatus.UNKNOWN, "$appLabel অ্যাপটি খোলার চেষ্টা করা হয়েছে, কিন্তু তা নিশ্চিত করা যায়নি।")
                     }
                 } else {
-                    return@withContext ToolResult(ToolStatus.UNKNOWN, "$appLabel অ্যাপটি খোলার চেষ্টা করা হয়েছে, কিন্তু তা নিশ্চিত করা যায়নি।")
+                    res = ToolResult(ToolStatus.UNKNOWN, "$appLabel অ্যাপটি খোলার চেষ্টা করা হয়েছে, কিন্তু তা নিশ্চিত করা যায়নি।")
                 }
+                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "openApp final result: status=${res.status}, message='${res.message}'")
+                return@withContext res
             } catch (e: Exception) {
                 MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "অ্যাপ খোলার ব্যর্থতা: ${e.message}")
-                return@withContext ToolResult(ToolStatus.FAILED, "অ্যাপটি সরাসরি খোলা সম্ভব হয়নি: ${e.localizedMessage}")
+                val res = ToolResult(ToolStatus.FAILED, "অ্যাপটি সরাসরি খোলা সম্ভব হয়নি: ${e.localizedMessage}")
+                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "openApp final result: status=${res.status}, message='${res.message}'")
+                return@withContext res
             }
         }
-        ToolResult(ToolStatus.FAILED, "অ্যাপটি চালু করা যাচ্ছে না।")
+        val res = ToolResult(ToolStatus.FAILED, "অ্যাপটি চালু করা যাচ্ছে না।")
+        MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "openApp final result: status=${res.status}, message='${res.message}'")
+        return@withContext res
     }
 
     suspend fun openUrl(urlStr: String): ToolResult = withContext(Dispatchers.IO) {
         if (!Settings.canDrawOverlays(context)) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Display over other apps (canDrawOverlays) অনুমতি দেওয়া নেই")
-            return@withContext ToolResult(
+            val res = ToolResult(
                 status = ToolStatus.UNAVAILABLE,
                 message = "অন্যান্য অ্যাপের উপরে দেখানোর (Display over other apps) অনুমতি দেওয়া নেই। সেটিংসে গিয়ে অনুমতি দিন।"
             )
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "openUrl final result: status=${res.status}, message='${res.message}'")
+            return@withContext res
         }
 
         var cleanUrl = urlStr.trim()
@@ -199,6 +222,7 @@ class DeviceToolExecutor(private val context: Context) {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         try {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "before startActivity (openUrl: $cleanUrl, overlayRunning=${com.example.service.MairaOverlayService.isOverlayShowing})")
             context.startActivity(intent)
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "URL খোলা হয়েছে: $cleanUrl")
 
@@ -208,6 +232,7 @@ class DeviceToolExecutor(private val context: Context) {
                 for (i in 0 until 5) {
                     kotlinx.coroutines.delay(300)
                     val fgPkg = service.getForegroundPackage()
+                    MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "openUrl polling attempt $i: foregroundPackage='$fgPkg'")
                     if (fgPkg.isNotBlank() && fgPkg.lowercase() != context.packageName.lowercase()) {
                         isOpened = true
                         break
@@ -215,7 +240,7 @@ class DeviceToolExecutor(private val context: Context) {
                 }
             }
 
-            if (isOpened) {
+            val res = if (isOpened) {
                 ToolResult(ToolStatus.SUCCESS, "ওয়েবসাইট খোলা হয়েছে।")
             } else {
                 postActionNotification(
@@ -225,8 +250,12 @@ class DeviceToolExecutor(private val context: Context) {
                 )
                 ToolResult(ToolStatus.UNKNOWN, "ওয়েবসাইটটি সরাসরি খোলা সম্ভব হয়নি। একটি নোটিফিকেশন পাঠানো হয়েছে, সেটিতে ট্যাপ করুন।")
             }
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "openUrl final result: status=${res.status}, message='${res.message}'")
+            res
         } catch (e: Exception) {
-            ToolResult(ToolStatus.FAILED, "ওয়েবসাইট খুলতে সমস্যা হয়েছে: ${e.localizedMessage}")
+            val res = ToolResult(ToolStatus.FAILED, "ওয়েবসাইট খুলতে সমস্যা হয়েছে: ${e.localizedMessage}")
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "openUrl final result: status=${res.status}, message='${res.message}'")
+            res
         }
     }
 
@@ -510,6 +539,7 @@ class DeviceToolExecutor(private val context: Context) {
 
         try {
             var activeIntent = intent
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "before startActivity (sendWhatsAppMessage: $resolvedName, overlayRunning=${com.example.service.MairaOverlayService.isOverlayShowing})")
             try {
                 context.startActivity(intent)
             } catch (_: Exception) {
@@ -540,6 +570,7 @@ class DeviceToolExecutor(private val context: Context) {
                 for (i in 0 until 5) {
                     kotlinx.coroutines.delay(300)
                     val fgPkg = service.getForegroundPackage()
+                    MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "sendWhatsAppMessage polling attempt $i: foregroundPackage='$fgPkg'")
                     if (fgPkg.isNotBlank() && (fgPkg.equals(targetPackage, ignoreCase = true) || fgPkg.lowercase().contains("whatsapp"))) {
                         isOpened = true
                         break
@@ -553,7 +584,7 @@ class DeviceToolExecutor(private val context: Context) {
                 "হোয়াটসঅ্যাপে $resolvedName-এর জন্য মেসেজটি প্রস্তুত করা হয়েছে, পাঠানোর জন্য সেন্ড বাটনে ট্যাপ করুন।"
             }
 
-            if (isOpened) {
+            val res = if (isOpened) {
                 ToolResult(
                     status = ToolStatus.SUCCESS,
                     message = responseMessage,
@@ -571,22 +602,28 @@ class DeviceToolExecutor(private val context: Context) {
                     details = "NOTIFICATION_POSTED"
                 )
             }
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "sendWhatsAppMessage final result: status=${res.status}, message='${res.message}'")
+            return@withContext res
         } catch (e: Exception) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "হোয়াটসঅ্যাপ চ্যাট খুলতে সমস্যা: ${e.message}")
-            ToolResult(
+            val res = ToolResult(
                 status = ToolStatus.FAILED,
                 message = "মেসেজ পাঠানো যায়নি: হোয়াটসঅ্যাপ চ্যাট খোলা সম্ভব হয়নি।"
             )
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "sendWhatsAppMessage final result: status=${res.status}, message='${res.message}'")
+            return@withContext res
         }
     }
 
     suspend fun playYoutube(query: String): ToolResult = withContext(Dispatchers.IO) {
         if (!Settings.canDrawOverlays(context)) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Display over other apps (canDrawOverlays) অনুমতি দেওয়া নেই")
-            return@withContext ToolResult(
+            val res = ToolResult(
                 status = ToolStatus.UNAVAILABLE,
                 message = "অন্যান্য অ্যাপের উপরে দেখানোর (Display over other apps) অনুমতি দেওয়া নেই। সেটিংসে গিয়ে অনুমতি দিন।"
             )
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "playYoutube final result: status=${res.status}, message='${res.message}'")
+            return@withContext res
         }
 
         try {
@@ -611,17 +648,20 @@ class DeviceToolExecutor(private val context: Context) {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 try {
+                    MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "before startActivity (playYoutube video: $videoId, overlayRunning=${com.example.service.MairaOverlayService.isOverlayShowing})")
                     context.startActivity(activeIntent)
                 } catch (e: Exception) {
                     val fallbackIntent = Intent(Intent.ACTION_VIEW, Uri.parse(videoUrl)).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
+                    MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "before startActivity (playYoutube fallback video: $videoId, overlayRunning=${com.example.service.MairaOverlayService.isOverlayShowing})")
                     context.startActivity(fallbackIntent)
                 }
             } else {
                 activeIntent = Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl)).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
+                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "before startActivity (playYoutube searchUrl: $searchUrl, overlayRunning=${com.example.service.MairaOverlayService.isOverlayShowing})")
                 context.startActivity(activeIntent)
             }
 
@@ -631,6 +671,7 @@ class DeviceToolExecutor(private val context: Context) {
                 for (i in 0 until 5) {
                     kotlinx.coroutines.delay(300)
                     val fgPkg = service.getForegroundPackage()
+                    MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "playYoutube polling attempt $i: foregroundPackage='$fgPkg'")
                     if (fgPkg.isNotBlank() && (fgPkg.lowercase().contains("youtube") || fgPkg.lowercase() != context.packageName.lowercase())) {
                         isOpened = true
                         break
@@ -638,7 +679,7 @@ class DeviceToolExecutor(private val context: Context) {
                 }
             }
 
-            if (isOpened) {
+            val res = if (isOpened) {
                 ToolResult(ToolStatus.SUCCESS, "ইউটিউবে '$query' চালানো হচ্ছে।")
             } else {
                 postActionNotification(
@@ -648,6 +689,8 @@ class DeviceToolExecutor(private val context: Context) {
                 )
                 ToolResult(ToolStatus.UNKNOWN, "ইউটিউব সরাসরি খোলা সম্ভব হয়নি। একটি নোটিফিকেশন পাঠানো হয়েছে, সেটিতে ট্যাপ করুন।")
             }
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "playYoutube final result: status=${res.status}, message='${res.message}'")
+            res
         } catch (e: Exception) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "ইউটিউব গান খোঁজা ব্যর্থ: ${e.message}")
             ToolResult(ToolStatus.FAILED, "ইউটিউবে গান খুঁজতে সমস্যা হয়েছে।")

@@ -9,6 +9,10 @@ class MairaApplication : Application() {
         super.onCreate()
         MairaLogger.init(this)
         MairaCrashHandler.init(this)
-        MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "মাইরা অ্যাপ্লিকেশন শুরু হয়েছে")
+        MairaLogger.log(
+            MairaLogger.Category.UI,
+            MairaLogger.Level.INFO,
+            "মাইরা অ্যাপ্লিকেশন শুরু হয়েছে (SDK_INT: ${android.os.Build.VERSION.SDK_INT}, Manufacturer: '${android.os.Build.MANUFACTURER}')"
+        )
     }
 }

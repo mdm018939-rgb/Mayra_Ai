@@ -299,6 +299,7 @@ class MairaVoiceService : Service() {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             try {
+                                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "before startActivity (callContact: ${first.name}, overlayRunning=${com.example.service.MairaOverlayService.isOverlayShowing})")
                                 startActivity(dialIntent)
                                 val service = MairaAccessibilityService.instance
                                 var isOpened = false
@@ -306,6 +307,7 @@ class MairaVoiceService : Service() {
                                     for (i in 0 until 5) {
                                         delay(300)
                                         val fgPkg = service.getForegroundPackage()
+                                        MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "callContact polling attempt $i: foregroundPackage='$fgPkg'")
                                         if (fgPkg.isNotBlank() && (fgPkg.lowercase().contains("dialer") || fgPkg.lowercase().contains("phone") || fgPkg.lowercase() != packageName.lowercase())) {
                                             isOpened = true
                                             break
@@ -324,9 +326,11 @@ class MairaVoiceService : Service() {
                                     resultObj.put("status", DeviceToolExecutor.ToolStatus.UNKNOWN.name)
                                     resultObj.put("message", "ডায়াল প্যাড সরাসরি খোলা সম্ভব হয়নি। একটি নোটিফিকেশন পাঠানো হয়েছে, সেটিতে ট্যাপ করুন।")
                                 }
+                                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "callContact final result: status=${resultObj.optString("status")}, message='${resultObj.optString("message")}'")
                             } catch (e: Exception) {
                                 resultObj.put("status", DeviceToolExecutor.ToolStatus.FAILED.name)
                                 resultObj.put("message", "ডায়ালার খোলা সম্ভব হয়নি: ${e.message}")
+                                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "callContact final result: status=${resultObj.optString("status")}, message='${resultObj.optString("message")}'")
                             }
                         }
                     }
