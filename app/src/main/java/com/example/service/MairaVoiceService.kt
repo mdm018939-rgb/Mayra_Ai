@@ -331,7 +331,7 @@ class MairaVoiceService : Service() {
 
         try {
             audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
                 sampleRate,
                 channelConfig,
                 audioFormat,
@@ -390,6 +390,59 @@ class MairaVoiceService : Service() {
         }
     }
 
+    private var audioFocusRequest: AudioFocusRequest? = null
+
+    private fun requestAudioFocus() {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val usage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                AudioAttributes.USAGE_ASSISTANT
+            } else {
+                AudioAttributes.USAGE_MEDIA
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val playbackAttributes = AudioAttributes.Builder()
+                    .setUsage(usage)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+
+                val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                    .setAudioAttributes(playbackAttributes)
+                    .setAcceptsDelayedFocusGain(false)
+                    .setOnAudioFocusChangeListener { _ -> }
+                    .build()
+
+                audioFocusRequest = focusRequest
+                audioManager.requestAudioFocus(focusRequest)
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.requestAudioFocus(
+                    { _ -> },
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                )
+            }
+        } catch (e: Exception) {
+            MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.WARN, "Audio focus অনুরোধ করতে ব্যর্থ: ${e.message}")
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+                audioFocusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.abandonAudioFocus { _ -> }
+            }
+        } catch (e: Exception) {
+            MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.WARN, "Audio focus ত্যাগ করতে ব্যর্থ: ${e.message}")
+        }
+    }
+
     private fun initAudioTrack() {
         val sampleRate = 24000
         val minBufferSize = AudioTrack.getMinBufferSize(
@@ -398,8 +451,14 @@ class MairaVoiceService : Service() {
             AudioFormat.ENCODING_PCM_16BIT
         )
 
+        val usage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            AudioAttributes.USAGE_ASSISTANT
+        } else {
+            AudioAttributes.USAGE_MEDIA
+        }
+
         val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setUsage(usage)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build()
 
@@ -417,18 +476,10 @@ class MairaVoiceService : Service() {
             AudioManager.AUDIO_SESSION_ID_GENERATE
         )
 
-        // Route speakerphone
+        // Request audio focus and set normal audio mode for assistant speech
+        requestAudioFocus()
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val speakerDevice = audioManager.availableCommunicationDevices.firstOrNull {
-                it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-            }
-            if (speakerDevice != null) audioManager.setCommunicationDevice(speakerDevice)
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.isSpeakerphoneOn = true
-        }
+        audioManager.mode = AudioManager.MODE_NORMAL
 
         audioTrack?.play()
         isPlaying = true
@@ -510,6 +561,10 @@ class MairaVoiceService : Service() {
         playbackThread?.interrupt()
         try { audioTrack?.stop(); audioTrack?.release() } catch (e: Exception) {}
         audioTrack = null
+
+        abandonAudioFocus()
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioManager.mode = AudioManager.MODE_NORMAL
 
         liveClient?.disconnect()
         liveClient = null
