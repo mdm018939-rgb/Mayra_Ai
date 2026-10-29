@@ -53,6 +53,14 @@ class DeviceToolExecutor(private val context: Context) {
     }
 
     suspend fun openApp(appName: String): ToolResult = withContext(Dispatchers.IO) {
+        if (!android.provider.Settings.canDrawOverlays(context)) {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Display over other apps (canDrawOverlays) অনুমতি দেওয়া নেই")
+            return@withContext ToolResult(
+                status = ToolStatus.UNAVAILABLE,
+                message = "অন্যান্য অ্যাপের উপরে দেখানোর (Display over other apps) অনুমতি দেওয়া নেই। সেটিংসে গিয়ে অনুমতি দিন।"
+            )
+        }
+
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN, null).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
         val apps = pm.queryIntentActivities(intent, 0)
@@ -71,23 +79,61 @@ class DeviceToolExecutor(private val context: Context) {
             return@withContext ToolResult(ToolStatus.UNAVAILABLE, "'$appName' অ্যাপটি আপনার ফোনে খুঁজে পাওয়া যায়নি।")
         }
 
-        if (matchedApps.size > 1) {
-            val names = matchedApps.take(3).joinToString(", ") { it.loadLabel(pm).toString() }
-            return@withContext ToolResult(ToolStatus.UNKNOWN, "একাধিক অ্যাপ পাওয়া গেছে: $names। কোনটি খুলব বলুন?")
+        val selected: android.content.pm.ResolveInfo = if (matchedApps.size == 1) {
+            matchedApps.first()
+        } else {
+            // Prefer exact label or package match (e.g. com.whatsapp over WhatsApp Business)
+            val exactMatch = matchedApps.firstOrNull { resolveInfo ->
+                val label = resolveInfo.loadLabel(pm).toString().lowercase().trim()
+                val pkg = resolveInfo.activityInfo.packageName.lowercase().trim()
+                aliasMatches.any { alias ->
+                    pkg == alias || pkg == "com.$alias" || label == alias || label == targetQuery
+                }
+            } ?: matchedApps.firstOrNull { resolveInfo ->
+                val pkg = resolveInfo.activityInfo.packageName.lowercase()
+                aliasMatches.any { alias -> pkg.endsWith(".$alias") || pkg == alias }
+            }
+
+            if (exactMatch != null) {
+                exactMatch
+            } else {
+                val names = matchedApps.take(3).joinToString(", ") { it.loadLabel(pm).toString() }
+                return@withContext ToolResult(ToolStatus.UNKNOWN, "একাধিক অ্যাপ পাওয়া গেছে: $names। কোনটি খুলব বলুন?")
+            }
         }
 
-        val selected = matchedApps.first()
-        val launchIntent = pm.getLaunchIntentForPackage(selected.activityInfo.packageName)
+        val targetPkg = selected.activityInfo.packageName
+        val appLabel = selected.loadLabel(pm).toString()
+        val launchIntent = pm.getLaunchIntentForPackage(targetPkg)
+
         if (launchIntent != null) {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             try {
                 context.startActivity(launchIntent)
-                val appLabel = selected.loadLabel(pm).toString()
-                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "অ্যাপ খোলা হয়েছে: $appLabel")
-                return@withContext ToolResult(ToolStatus.SUCCESS, "$appLabel অ্যাপটি খোলা হয়েছে।")
+                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "অ্যাপ খোলার চেষ্টা করা হয়েছে: $appLabel ($targetPkg)")
+
+                val service = com.example.service.MairaAccessibilityService.instance
+                if (service != null && com.example.service.MairaAccessibilityService.isServiceConnected) {
+                    var isOpened = false
+                    for (i in 0 until 5) {
+                        kotlinx.coroutines.delay(300)
+                        val fgPkg = service.getForegroundPackage()
+                        if (fgPkg.isNotBlank() && (fgPkg.equals(targetPkg, ignoreCase = true) || fgPkg.lowercase().contains(targetPkg.lowercase()))) {
+                            isOpened = true
+                            break
+                        }
+                    }
+                    return@withContext if (isOpened) {
+                        ToolResult(ToolStatus.SUCCESS, "$appLabel অ্যাপটি খোলা হয়েছে।")
+                    } else {
+                        ToolResult(ToolStatus.UNKNOWN, "$appLabel অ্যাপটি খোলার চেষ্টা করা হয়েছে, কিন্তু তা নিশ্চিত করা যায়নি।")
+                    }
+                } else {
+                    return@withContext ToolResult(ToolStatus.UNKNOWN, "$appLabel অ্যাপটি খোলার চেষ্টা করা হয়েছে, কিন্তু তা নিশ্চিত করা যায়নি।")
+                }
             } catch (e: Exception) {
                 MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "অ্যাপ খোলার ব্যর্থতা: ${e.message}")
-                return@withContext ToolResult(ToolStatus.FAILED, "অ্যাপটি সরাসরি খোলা সম্ভব হয়নি।")
+                return@withContext ToolResult(ToolStatus.FAILED, "অ্যাপটি সরাসরি খোলা সম্ভব হয়নি: ${e.localizedMessage}")
             }
         }
         ToolResult(ToolStatus.FAILED, "অ্যাপটি চালু করা যাচ্ছে না।")

@@ -16,6 +16,9 @@ class MairaAccessibilityService : AccessibilityService() {
             private set
         var instance: MairaAccessibilityService? = null
             private set
+        @Volatile
+        var currentPackageName: String = ""
+            private set
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -28,7 +31,20 @@ class MairaAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Automation events monitored when active
+        if (event != null) {
+            val pkg = event.packageName?.toString()
+            if (!pkg.isNullOrEmpty()) {
+                currentPackageName = pkg
+            }
+        }
+        val rootPkg = rootInActiveWindow?.packageName?.toString()
+        if (!rootPkg.isNullOrEmpty()) {
+            currentPackageName = rootPkg
+        }
+    }
+
+    fun getForegroundPackage(): String {
+        return rootInActiveWindow?.packageName?.toString() ?: currentPackageName
     }
 
     override fun onInterrupt() {
