@@ -14,11 +14,13 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
@@ -87,7 +89,6 @@ class MairaOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayContainer: FrameLayout? = null
     private var avatarView: MairaAvatarView? = null
-    private var statusTextView: TextView? = null
     private var snapAnimator: ValueAnimator? = null
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -194,62 +195,34 @@ class MairaOverlayService : Service() {
             val avatar = MairaAvatarView(this).apply {
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
-                    (containerHeight * 0.85f).toInt()
+                    FrameLayout.LayoutParams.MATCH_PARENT
                 ).apply {
-                    gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                    gravity = Gravity.CENTER
                 }
             }
             avatarView = avatar
             root.addView(avatar)
 
-            // 3. Status Badge / Speech Pill at Bottom
-            val statusPill = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    (28 * density).toInt()
-                ).apply {
-                    gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                    bottomMargin = (4 * density).toInt()
-                }
-                background = GradientDrawable().apply {
-                    cornerRadius = 14 * density
-                    setColor(Color.parseColor("#E61E162B"))
-                    setStroke((1 * density).toInt(), Color.parseColor("#447C4DFF"))
-                }
-                setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
-            }
+            // 3. Drag & Double-Tap Handling with Magnetic Edge Snapping
+            // - Dragging moves the avatar overlay smoothly and snaps to nearest edge on release.
+            // - Single tap does NOT open MainActivity.
+            // - Double tap within doubleTapTimeout opens or brings MainActivity to foreground.
+            // - Dragging or gesture cancellation resets double-tap tracking.
+            val viewConfig = ViewConfiguration.get(this)
+            val touchSlop = viewConfig.scaledTouchSlop
+            val doubleTapTimeout = ViewConfiguration.getDoubleTapTimeout().toLong()
+            val doubleTapSlop = viewConfig.scaledDoubleTapSlop
+            val doubleTapSlopSq = doubleTapSlop * doubleTapSlop
 
-            val statusDot = View(this).apply {
-                layoutParams = LinearLayout.LayoutParams((7 * density).toInt(), (7 * density).toInt()).apply {
-                    rightMargin = (6 * density).toInt()
-                }
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(Color.parseColor("#00E5FF"))
-                }
-            }
-            statusPill.addView(statusDot)
-
-            val statusText = TextView(this).apply {
-                text = "প্রস্তুত"
-                textSize = 11f
-                setTextColor(Color.WHITE)
-                maxLines = 1
-            }
-            statusTextView = statusText
-            statusPill.addView(statusText)
-
-            root.addView(statusPill)
-
-            // 5. Drag & Touch Handling with Magnetic Edge Snapping
             root.setOnTouchListener(object : View.OnTouchListener {
                 private var initialX = 0
                 private var initialY = 0
                 private var initialTouchX = 0f
                 private var initialTouchY = 0f
                 private var isDragging = false
+                private var lastTapUpTime = 0L
+                private var lastTapUpX = 0f
+                private var lastTapUpY = 0f
 
                 override fun onTouch(v: View?, event: MotionEvent): Boolean {
                     when (event.action) {
@@ -265,8 +238,9 @@ class MairaOverlayService : Service() {
                         MotionEvent.ACTION_MOVE -> {
                             val dx = event.rawX - initialTouchX
                             val dy = event.rawY - initialTouchY
-                            if (abs(dx) > 10 || abs(dy) > 10) {
+                            if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
                                 isDragging = true
+                                lastTapUpTime = 0L
                             }
                             if (isDragging) {
                                 params.x = initialX + dx.toInt()
@@ -278,16 +252,37 @@ class MairaOverlayService : Service() {
                             return true
                         }
                         MotionEvent.ACTION_UP -> {
-                            if (!isDragging) {
-                                // Single tap on avatar -> Open MainActivity
-                                val appIntent = Intent(this@MairaOverlayService, MainActivity::class.java).apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                                }
-                                startActivity(appIntent)
-                            } else {
-                                // Drag finished -> Snap to closest edge (left or right)
+                            if (isDragging) {
+                                lastTapUpTime = 0L
                                 snapToNearestEdge(params, root)
+                            } else {
+                                val upTime = SystemClock.uptimeMillis()
+                                val upX = event.rawX
+                                val upY = event.rawY
+                                val timeDiff = upTime - lastTapUpTime
+                                val distX = upX - lastTapUpX
+                                val distY = upY - lastTapUpY
+                                val distSq = distX * distX + distY * distY
+
+                                if (lastTapUpTime > 0L && timeDiff in 40..doubleTapTimeout && distSq <= doubleTapSlopSq) {
+                                    // Valid double tap -> Open / bring MainActivity to foreground
+                                    lastTapUpTime = 0L
+                                    val appIntent = Intent(this@MairaOverlayService, MainActivity::class.java).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                    }
+                                    startActivity(appIntent)
+                                } else {
+                                    // First/single tap: do NOT open MainActivity. Track for potential double tap.
+                                    lastTapUpTime = upTime
+                                    lastTapUpX = upX
+                                    lastTapUpY = upY
+                                }
                             }
+                            return true
+                        }
+                        MotionEvent.ACTION_CANCEL -> {
+                            isDragging = false
+                            lastTapUpTime = 0L
                             return true
                         }
                     }
@@ -362,7 +357,6 @@ class MairaOverlayService : Service() {
         serviceScope.launch {
             MairaVoiceService.statusMessage.collectLatest { status ->
                 avatarView?.setStatusMessage(status)
-                statusTextView?.text = status.take(14)
             }
         }
     }
@@ -377,7 +371,6 @@ class MairaOverlayService : Service() {
         }
         overlayContainer = null
         avatarView = null
-        statusTextView = null
         isOverlayShowing = false
     }
 
