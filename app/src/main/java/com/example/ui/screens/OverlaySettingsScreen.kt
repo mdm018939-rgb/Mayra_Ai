@@ -27,7 +27,8 @@ fun OverlaySettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var isEnabled by remember { mutableStateOf(prefsManager.isOverlayEnabled() && Settings.canDrawOverlays(context)) }
+    val savedEnabled by prefsManager.overlayEnabledFlow.collectAsState()
+    var isEnabled by remember(savedEnabled) { mutableStateOf(savedEnabled && Settings.canDrawOverlays(context)) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     Column(

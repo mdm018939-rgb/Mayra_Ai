@@ -18,4 +18,21 @@ class ExampleRobolectricTest {
     val appName = context.getString(R.string.app_name)
     assertEquals("Maira", appName)
   }
+
+  @Test
+  fun `overlay preference defaults to false and persists correctly`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val prefsManager = com.example.data.EncryptedPreferencesManager(context)
+
+    // Defaults to false on clean install
+    assertEquals(false, prefsManager.isOverlayEnabled())
+
+    // Setting to true persists
+    prefsManager.setOverlayEnabled(true)
+    assertEquals(true, prefsManager.isOverlayEnabled())
+
+    // Switching to false persists
+    prefsManager.setOverlayEnabled(false)
+    assertEquals(false, prefsManager.isOverlayEnabled())
+  }
 }

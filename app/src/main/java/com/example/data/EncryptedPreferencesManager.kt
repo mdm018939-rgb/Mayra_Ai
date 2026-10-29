@@ -298,9 +298,13 @@ class EncryptedPreferencesManager(context: Context) {
     }
 
     // Overlay Floating Avatar Settings
+    private val _overlayEnabledFlow = MutableStateFlow(isOverlayEnabled())
+    val overlayEnabledFlow: StateFlow<Boolean> = _overlayEnabledFlow.asStateFlow()
+
     fun isOverlayEnabled(): Boolean = prefs.getBoolean("overlay_enabled", false)
     fun setOverlayEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("overlay_enabled", enabled).apply()
+        _overlayEnabledFlow.value = enabled
         MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "ভাসমান মেয়ে সুইচ: $enabled")
     }
 

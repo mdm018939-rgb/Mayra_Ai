@@ -130,7 +130,7 @@ class MairaVoiceService : Service() {
         initAudioTrack()
         connectLiveClient(geminiKey)
 
-        if (android.provider.Settings.canDrawOverlays(this)) {
+        if (prefsManager.isOverlayEnabled() && android.provider.Settings.canDrawOverlays(this)) {
             try {
                 MairaOverlayService.startService(this)
             } catch (e: Exception) {

@@ -57,6 +57,15 @@ class MairaOverlayService : Service() {
             private set
 
         fun startService(context: Context) {
+            val prefs = EncryptedPreferencesManager(context)
+            if (!prefs.isOverlayEnabled()) {
+                MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "ভাসমান মেয়ে সেটিংসে বন্ধ রয়েছে, ওভারলে সার্ভিস চালু করা হবে না")
+                return
+            }
+            if (!Settings.canDrawOverlays(context)) {
+                MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.WARN, "ওভারলে পারমিশন নেই, সার্ভিস শুরু করা যাবে না")
+                return
+            }
             val intent = Intent(context, MairaOverlayService::class.java).apply {
                 action = ACTION_SHOW_OVERLAY
             }
@@ -96,6 +105,14 @@ class MairaOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!prefsManager.isOverlayEnabled() || !Settings.canDrawOverlays(this)) {
+            MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "ওভারলে সেটিংসে নিষ্ক্রিয় বা পারমিশন নেই: সার্ভিস ও উইন্ডো বন্ধ করা হচ্ছে")
+            hideOverlayWindow()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         try {
             startForegroundNotification()
         } catch (e: Exception) {
@@ -111,15 +128,24 @@ class MairaOverlayService : Service() {
                 stopSelf()
             }
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     @Synchronized
     @SuppressLint("ClickableViewAccessibility")
     private fun showOverlayWindow() {
+        if (!prefsManager.isOverlayEnabled()) {
+            MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "ভাসমান অ্যাভাটার সেটিংসে বন্ধ রয়েছে, উইন্ডো দেখানো হবে না")
+            hideOverlayWindow()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
+
         if (!Settings.canDrawOverlays(this)) {
             MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.WARN, "ওভারলে পারমিশন নেই, ভাসমান অ্যাভাটার দেখানো সম্ভব হয়নি")
-            prefsManager.setOverlayEnabled(false)
+            hideOverlayWindow()
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
         }
