@@ -176,47 +176,7 @@ class MairaOverlayService : Service() {
             avatarView = avatar
             root.addView(avatar)
 
-            // 3. Accessible Close Button (>=48dp touch target)
-            val closeTouchTarget = (48 * density).toInt()
-            val closeIconSize = (26 * density).toInt()
-
-            val closeButtonContainer = FrameLayout(this).apply {
-                layoutParams = FrameLayout.LayoutParams(closeTouchTarget, closeTouchTarget).apply {
-                    gravity = Gravity.TOP or Gravity.END
-                    topMargin = 0
-                    rightMargin = 0
-                }
-                contentDescription = "ভাসমান মাইরা বন্ধ করুন"
-                isClickable = true
-                isFocusable = true
-            }
-
-            val closeBadge = TextView(this).apply {
-                layoutParams = FrameLayout.LayoutParams(closeIconSize, closeIconSize).apply {
-                    gravity = Gravity.CENTER
-                }
-                text = "✕"
-                textSize = 13f
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(Color.parseColor("#D923182B"))
-                    setStroke((1.5f * density).toInt(), Color.parseColor("#88FF4081"))
-                }
-            }
-            closeButtonContainer.addView(closeBadge)
-
-            closeButtonContainer.setOnClickListener {
-                MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "ক্লোজ বাটন চেপে ভাসমান অ্যাভাটার বন্ধ করা হয়েছে")
-                prefsManager.setOverlayEnabled(false)
-                hideOverlayWindow()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
-            root.addView(closeButtonContainer)
-
-            // 4. Status Badge / Speech Pill at Bottom
+            // 3. Status Badge / Speech Pill at Bottom
             val statusPill = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL

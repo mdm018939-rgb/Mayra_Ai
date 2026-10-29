@@ -77,10 +77,18 @@ class MairaVoiceService : Service() {
     private val audioQueue = ConcurrentLinkedQueue<ByteArray>()
     private var isPlaying = false
     private var playbackThread: Thread? = null
+    @Volatile private var isServerTurnComplete = false
 
     private var wakeLock: PowerManager.WakeLock? = null
 
-    private val stopWords = listOf("থামো", "থাম", "চুপ", "চুপ করো", "স্টপ", "বন্ধ করো")
+    private val explicitStopCommands = setOf("থামো", "থাম", "থামুন", "চুপ", "চুপ করো", "স্টপ", "stop")
+
+    private fun isExplicitStopCommand(text: String): Boolean {
+        val clean = text.trim().lowercase().replace("[.,?!।\"']".toRegex(), "")
+        if (clean in explicitStopCommands) return true
+        val words = clean.split("\\s+".toRegex()).filter { it.isNotBlank() }
+        return words.size in 1..3 && words.any { it in explicitStopCommands }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -175,10 +183,12 @@ class MairaVoiceService : Service() {
         override fun onSetupComplete() {
             _sessionState.value = "সংযুক্ত"
             _statusMessage.value = "শুনছি..."
+            isServerTurnComplete = false
             startAudioRecording()
         }
 
         override fun onAudioDataReceived(pcm24kBytes: ByteArray) {
+            isServerTurnComplete = false
             _statusMessage.value = "বলছি..."
             enqueueAudioPlayback(pcm24kBytes)
         }
@@ -187,10 +197,12 @@ class MairaVoiceService : Service() {
             _lastInputTranscription.value = text
             MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.INFO, "শুনেছি: $text")
 
-            // Check stop words
-            if (stopWords.any { text.contains(it) }) {
-                MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.INFO, "স্টপ ওয়াড চিহ্নিত হয়েছে: প্লেব্যাক বন্ধ করা হচ্ছে")
+            // Only stop if user explicitly uttered an intentional stop command
+            if (isExplicitStopCommand(text)) {
+                MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.INFO, "স্পষ্ট স্টপ কমান্ড পাওয়া গেছে: প্লেব্যাক বন্ধ করা হচ্ছে")
                 flushAudioPlayback()
+                isServerTurnComplete = true
+                _statusMessage.value = "শুনছি..."
             }
         }
 
@@ -199,17 +211,16 @@ class MairaVoiceService : Service() {
         }
 
         override fun onInterrupted() {
-            MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.INFO, "Gemini Live Interrupted event: প্লেব্যাক থামানো হচ্ছে")
-            flushAudioPlayback()
-            _statusMessage.value = "শুনছি..."
+            MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.INFO, "Gemini Live Interrupted event গ্রহণ করা হয়েছে (বর্তমান বাফার সমাপ্ত হবে)")
+            // Do not discard already queued audio chunks; allow received speech to finish naturally
+            isServerTurnComplete = true
         }
 
         override fun onTurnComplete() {
-            serviceScope.launch {
-                delay(300)
-                if (audioQueue.isEmpty()) {
-                    _statusMessage.value = "শুনছি..."
-                }
+            isServerTurnComplete = true
+            // If audioQueue is already empty (e.g. text/tool response with no audio), switch to listening immediately
+            if (audioQueue.isEmpty()) {
+                _statusMessage.value = "শুনছি..."
             }
         }
 
@@ -330,7 +341,22 @@ class MairaVoiceService : Service() {
                     if (read > 0) {
                         val pcmChunk = buffer.copyOf(read)
                         calculateMicRms(pcmChunk)
-                        liveClient?.sendAudioChunk(pcmChunk)
+
+                        // Prevent speaker echo and acoustic feedback from interrupting Maira's speech
+                        val isMairaSpeaking = _statusMessage.value == "বলছি..." || audioQueue.isNotEmpty() || _speakerRmsFlow.value > 0.02f
+
+                        if (!isMairaSpeaking) {
+                            // Normal listening: forward microphone audio chunk to Gemini Live
+                            liveClient?.sendAudioChunk(pcmChunk)
+                        } else {
+                            // Maira is speaking: protect ongoing playback from speakerphone echo / background noise.
+                            // Only forward to Gemini Live if strong intentional user speech is detected above speaker feedback
+                            val micLevel = _micRmsFlow.value
+                            val speakerLevel = _speakerRmsFlow.value
+                            if (micLevel > 0.35f && micLevel > speakerLevel * 1.25f) {
+                                liveClient?.sendAudioChunk(pcmChunk)
+                            }
+                        }
                     }
 
                     val now = System.currentTimeMillis()
@@ -398,6 +424,12 @@ class MairaVoiceService : Service() {
                     audioTrack?.write(chunk, 0, chunk.size)
                 } else {
                     _speakerRmsFlow.value = 0f
+                    // If server completed its turn and all queued audio finished playing, return cleanly to listening state
+                    if (isServerTurnComplete && _statusMessage.value == "বলছি...") {
+                        _statusMessage.value = "শুনছি..."
+                        isServerTurnComplete = false
+                        MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.INFO, "মাইরা উত্তর বলা সম্পন্ন করেছে, শুনছি...")
+                    }
                     try { Thread.sleep(20) } catch (e: InterruptedException) { break }
                 }
             }
@@ -405,6 +437,11 @@ class MairaVoiceService : Service() {
     }
 
     private fun enqueueAudioPlayback(pcm24kBytes: ByteArray) {
+        if (audioQueue.size > 150) {
+            while (audioQueue.size > 100) {
+                audioQueue.poll()
+            }
+        }
         audioQueue.add(pcm24kBytes)
     }
 
@@ -416,6 +453,7 @@ class MairaVoiceService : Service() {
             audioTrack?.play()
         } catch (e: Exception) {}
         _speakerRmsFlow.value = 0f
+        isServerTurnComplete = false
     }
 
     private fun calculateMicRms(buffer: ByteArray) {
@@ -465,6 +503,7 @@ class MairaVoiceService : Service() {
         _statusMessage.value = "মাইক বন্ধ করা হয়েছে"
         _micRmsFlow.value = 0f
         _speakerRmsFlow.value = 0f
+        isServerTurnComplete = false
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

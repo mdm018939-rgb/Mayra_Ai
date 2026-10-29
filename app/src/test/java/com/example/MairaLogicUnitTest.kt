@@ -94,4 +94,27 @@ class MairaLogicUnitTest {
         assertEquals("ACTION_HIDE_OVERLAY", com.example.service.MairaOverlayService.ACTION_HIDE_OVERLAY)
         assertEquals("maira_overlay_channel", com.example.service.MairaOverlayService.CHANNEL_ID)
     }
+
+    @Test
+    fun testExplicitStopCommandRecognition() {
+        val explicitStopCommands = setOf("থামো", "থাম", "থামুন", "চুপ", "চুপ করো", "স্টপ", "stop")
+        fun isExplicitStop(text: String): Boolean {
+            val clean = text.trim().lowercase().replace("[.,?!।\"']".toRegex(), "")
+            if (clean in explicitStopCommands) return true
+            val words = clean.split("\\s+".toRegex()).filter { it.isNotBlank() }
+            return words.size in 1..3 && words.any { it in explicitStopCommands }
+        }
+
+        // True for explicit intentional commands
+        assertTrue(isExplicitStop("থামো"))
+        assertTrue(isExplicitStop("চুপ করো"))
+        assertTrue(isExplicitStop("স্টপ!"))
+        assertTrue(isExplicitStop("stop"))
+        assertTrue(isExplicitStop("একটু থামুন"))
+
+        // False for normal conversational phrases containing partial substrings or long speech
+        assertFalse(isExplicitStop("প্রথম কাজটি কী ছিল?"))
+        assertFalse(isExplicitStop("আমি আজকে বাজারে গিয়েছিলাম এবং অনেক কথা হয়েছে"))
+        assertFalse(isExplicitStop("মাইরা তুমি কেমন আছো"))
+    }
 }
