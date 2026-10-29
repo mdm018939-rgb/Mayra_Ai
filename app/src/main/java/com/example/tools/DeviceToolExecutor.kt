@@ -46,7 +46,11 @@ class DeviceToolExecutor(private val context: Context) {
         "আপু" to listOf("apu", "sister", "আপু", "আপি")
     )
 
-    data class ToolResult(val success: Boolean, val message: String, val details: String? = null)
+    enum class ToolStatus { SUCCESS, FAILED, UNAVAILABLE, UNKNOWN }
+
+    data class ToolResult(val status: ToolStatus, val message: String, val details: String? = null) {
+        val success: Boolean get() = status == ToolStatus.SUCCESS
+    }
 
     suspend fun openApp(appName: String): ToolResult = withContext(Dispatchers.IO) {
         val pm = context.packageManager
@@ -64,12 +68,12 @@ class DeviceToolExecutor(private val context: Context) {
 
         if (matchedApps.isEmpty()) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "অ্যাপ খুঁজে পাওয়া যায়নি: $appName")
-            return@withContext ToolResult(false, "'$appName' অ্যাপটি আপনার ফোনে খুঁজে পাওয়া যায়নি।")
+            return@withContext ToolResult(ToolStatus.UNAVAILABLE, "'$appName' অ্যাপটি আপনার ফোনে খুঁজে পাওয়া যায়নি।")
         }
 
         if (matchedApps.size > 1) {
             val names = matchedApps.take(3).joinToString(", ") { it.loadLabel(pm).toString() }
-            return@withContext ToolResult(false, "একাধিক অ্যাপ পাওয়া গেছে: $names। কোনটি খুলব বলুন?")
+            return@withContext ToolResult(ToolStatus.UNKNOWN, "একাধিক অ্যাপ পাওয়া গেছে: $names। কোনটি খুলব বলুন?")
         }
 
         val selected = matchedApps.first()
@@ -80,13 +84,13 @@ class DeviceToolExecutor(private val context: Context) {
                 context.startActivity(launchIntent)
                 val appLabel = selected.loadLabel(pm).toString()
                 MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "অ্যাপ খোলা হয়েছে: $appLabel")
-                return@withContext ToolResult(true, "$appLabel অ্যাপটি খোলা হয়েছে।")
+                return@withContext ToolResult(ToolStatus.SUCCESS, "$appLabel অ্যাপটি খোলা হয়েছে।")
             } catch (e: Exception) {
                 MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "অ্যাপ খোলার ব্যর্থতা: ${e.message}")
-                return@withContext ToolResult(false, "অ্যাপটি সরাসরি খোলা সম্ভব হয়নি।")
+                return@withContext ToolResult(ToolStatus.FAILED, "অ্যাপটি সরাসরি খোলা সম্ভব হয়নি।")
             }
         }
-        ToolResult(false, "অ্যাপটি চালু করা যাচ্ছে না।")
+        ToolResult(ToolStatus.FAILED, "অ্যাপটি চালু করা যাচ্ছে না।")
     }
 
     suspend fun openUrl(urlStr: String): ToolResult = withContext(Dispatchers.IO) {
@@ -100,16 +104,16 @@ class DeviceToolExecutor(private val context: Context) {
             }
             context.startActivity(intent)
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "URL খোলা হয়েছে: $cleanUrl")
-            ToolResult(true, "ওয়েবসাইট খোলা হয়েছে।")
+            ToolResult(ToolStatus.SUCCESS, "ওয়েবসাইট খোলা হয়েছে।")
         } catch (e: Exception) {
-            ToolResult(false, "ওয়েবসাইট খুলতে সমস্যা হয়েছে: ${e.localizedMessage}")
+            ToolResult(ToolStatus.FAILED, "ওয়েবসাইট খুলতে সমস্যা হয়েছে: ${e.localizedMessage}")
         }
     }
 
     suspend fun setFlashlight(on: Boolean): ToolResult = withContext(Dispatchers.IO) {
         val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
         if (cameraManager == null) {
-            return@withContext ToolResult(false, "আপনার ডিভাইসে ফ্ল্যাশলাইট সমর্থন করে না।")
+            return@withContext ToolResult(ToolStatus.UNAVAILABLE, "আপনার ডিভাইসে ফ্ল্যাশলাইট সমর্থন করে না।")
         }
         try {
             val cameraId = cameraManager.cameraIdList.firstOrNull()
@@ -117,13 +121,13 @@ class DeviceToolExecutor(private val context: Context) {
                 cameraManager.setTorchMode(cameraId, on)
                 val statusStr = if (on) "চালু" else "বন্ধ"
                 MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "ফ্ল্যাশলাইট $statusStr করা হয়েছে")
-                ToolResult(true, "ফ্ল্যাশলাইট $statusStr করা হয়েছে।")
+                ToolResult(ToolStatus.SUCCESS, "ফ্ল্যাশলাইট $statusStr করা হয়েছে।")
             } else {
-                ToolResult(false, "ফ্ল্যাশলাইট ক্যামেরা আইডি পাওয়া যায়নি।")
+                ToolResult(ToolStatus.UNAVAILABLE, "ফ্ল্যাশলাইট ক্যামেরা আইডি পাওয়া যায়নি।")
             }
         } catch (e: Exception) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "ফ্ল্যাশলাইট কন্ট্রোল ব্যর্থতা: ${e.message}")
-            ToolResult(false, "ফ্ল্যাশলাইট পরিবর্তন করা সম্ভব হয়নি।")
+            ToolResult(ToolStatus.FAILED, "ফ্ল্যাশলাইট পরিবর্তন করা সম্ভব হয়নি।")
         }
     }
 
@@ -271,19 +275,19 @@ class DeviceToolExecutor(private val context: Context) {
 
         if (cleanRecipient.isBlank()) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "হোয়াটসঅ্যাপ মেসেজ: প্রাপকের নাম অনুপস্থিত")
-            return@withContext ToolResult(false, "কার কাছে WhatsApp মেসেজ পাঠাতে চান বলুন।")
+            return@withContext ToolResult(ToolStatus.UNAVAILABLE, "কার কাছে WhatsApp মেসেজ পাঠাতে চান বলুন।")
         }
 
         if (cleanMessage.isBlank()) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "হোয়াটসঅ্যাপ মেসেজ: মেসেজ ফাঁকা")
-            return@withContext ToolResult(false, "কী মেসেজ পাঠাতে চান তা বলুন।")
+            return@withContext ToolResult(ToolStatus.UNAVAILABLE, "কী মেসেজ পাঠাতে চান তা বলুন।")
         }
 
         val isStandardInstalled = isPackageInstalled("com.whatsapp")
         val isBusinessInstalled = isPackageInstalled("com.whatsapp.w4b")
         if (!isStandardInstalled && !isBusinessInstalled) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "হোয়াটসঅ্যাপ অ্যাপ ইনস্টল করা নেই")
-            return@withContext ToolResult(false, "আপনার ফোনে WhatsApp ইনস্টল করা নেই। প্লে স্টোর থেকে ইনস্টল করুন।")
+            return@withContext ToolResult(ToolStatus.UNAVAILABLE, "আপনার ফোনে WhatsApp ইনস্টল করা নেই। প্লে স্টোর থেকে ইনস্টল করুন।")
         }
         val targetPackage = if (isStandardInstalled) "com.whatsapp" else "com.whatsapp.w4b"
 
@@ -302,20 +306,20 @@ class DeviceToolExecutor(private val context: Context) {
         if (isDirectPhoneNumber) {
             val norm = normalizePhoneNumber(asciiRecipient)
             if (norm == null) {
-                return@withContext ToolResult(false, "ফোন নম্বরটি সঠিক ফরম্যাটে নেই।")
+                return@withContext ToolResult(ToolStatus.UNAVAILABLE, "ফোন নম্বরটি সঠিক ফরম্যাটে নেই।")
             }
             resolvedName = cleanRecipient
             normalizedPhone = norm
         } else {
             if (context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
                 MairaLogger.log(MairaLogger.Category.PERMISSION, MairaLogger.Level.WARN, "READ_CONTACTS পারমিশন নাই")
-                return@withContext ToolResult(false, "কন্টাক্ট নম্বর খুঁজে পেতে কন্টাক্ট পারমিশন (READ_CONTACTS) প্রয়োজন। সেটিংসে গিয়ে অনুমতি দিন।")
+                return@withContext ToolResult(ToolStatus.UNAVAILABLE, "কন্টাক্ট নম্বর খুঁজে পেতে কন্টাক্ট পারমিশন (READ_CONTACTS) প্রয়োজন। সেটিংসে গিয়ে অনুমতি দিন।")
             }
 
             val matches = searchContacts(cleanRecipient)
             if (matches.isEmpty()) {
                 MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "কন্টাক্ট পাওয়া যায়নি: $cleanRecipient")
-                return@withContext ToolResult(false, "'$cleanRecipient' নামে কোনো কন্টাক্ট নম্বর খুঁজে পাওয়া যায়নি।")
+                return@withContext ToolResult(ToolStatus.UNAVAILABLE, "'$cleanRecipient' নামে কোনো কন্টাক্ট নম্বর খুঁজে পাওয়া যায়নি।")
             }
 
             val selectedMatch: ContactMatch
@@ -332,7 +336,7 @@ class DeviceToolExecutor(private val context: Context) {
                 } else {
                     val candidateNames = matches.map { it.name }.distinct().take(4).joinToString(", ")
                     MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "একাধিক কন্টাক্ট পাওয়া গেছে: $candidateNames")
-                    return@withContext ToolResult(false, "'$cleanRecipient' নামে একাধিক কন্টাক্ট পাওয়া গেছে: $candidateNames। কার কাছে পাঠাতে চান স্পষ্ট করে বলুন।")
+                    return@withContext ToolResult(ToolStatus.UNKNOWN, "'$cleanRecipient' নামে একাধিক কন্টাক্ট পাওয়া গেছে: $candidateNames। কার কাছে পাঠাতে চান স্পষ্ট করে বলুন।")
                 }
             }
 
@@ -340,7 +344,7 @@ class DeviceToolExecutor(private val context: Context) {
             val norm = normalizePhoneNumber(selectedMatch.number)
             if (norm == null) {
                 MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "ফোন নম্বর সঠিক নয়: ${selectedMatch.number}")
-                return@withContext ToolResult(false, "${selectedMatch.name}-এর ফোন নম্বরটি সঠিক ফরম্যাটে নেই।")
+                return@withContext ToolResult(ToolStatus.UNAVAILABLE, "${selectedMatch.name}-এর ফোন নম্বরটি সঠিক ফরম্যাটে নেই।")
             }
             normalizedPhone = norm
         }
@@ -385,14 +389,14 @@ class DeviceToolExecutor(private val context: Context) {
             }
 
             ToolResult(
-                success = true,
+                status = ToolStatus.SUCCESS,
                 message = responseMessage,
                 details = "PREFILLED_OPENED"
             )
         } catch (e: Exception) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "হোয়াটসঅ্যাপ চ্যাট খুলতে সমস্যা: ${e.message}")
             ToolResult(
-                success = false,
+                status = ToolStatus.FAILED,
                 message = "মেসেজ পাঠানো যায়নি: হোয়াটসঅ্যাপ চ্যাট খোলা সম্ভব হয়নি।"
             )
         }
@@ -428,7 +432,7 @@ class DeviceToolExecutor(private val context: Context) {
                     context.startActivity(fallbackIntent)
                 }
                 MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "ইউটিউব গান পাওয়া গেছে ও চালানো হয়েছে")
-                return@withContext ToolResult(true, "ইউটিউবে '$query' চালানো হচ্ছে।")
+                return@withContext ToolResult(ToolStatus.SUCCESS, "ইউটিউবে '$query' চালানো হচ্ছে।")
             } else {
                 // Fallback to search results page
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl)).apply {
@@ -436,11 +440,11 @@ class DeviceToolExecutor(private val context: Context) {
                 }
                 context.startActivity(intent)
                 MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "ইউটিউব নির্দিষ্ট ভিডিও আইডি মেলেনি, সার্চ পেজ খোলা হয়েছে")
-                return@withContext ToolResult(true, "ইউটিউব সার্চ ফলাফল খোলা হয়েছে, পছন্দমতো গানটি বেছে নাও।")
+                return@withContext ToolResult(ToolStatus.SUCCESS, "ইউটিউব সার্চ ফলাফল খোলা হয়েছে, পছন্দমতো গানটি বেছে নাও।")
             }
         } catch (e: Exception) {
             MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "ইউটিউব গান খোঁজা ব্যর্থ: ${e.message}")
-            ToolResult(false, "ইউটিউবে গান খুঁজতে সমস্যা হয়েছে।")
+            ToolResult(ToolStatus.FAILED, "ইউটিউবে গান খুঁজতে সমস্যা হয়েছে।")
         }
     }
 }

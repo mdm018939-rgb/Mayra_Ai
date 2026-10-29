@@ -17,6 +17,7 @@ object PersonalityPrompts {
 - কঠোর সত্যবাদিতা: কখনোই নিজে থেকে বলবে না "মেসেজ পাঠানো হয়েছে"! টুল থেকে প্রাপ্ত ফলাফলের সত্য বলবে: "মেসেজটি প্রস্তুত করা হয়েছে, পাঠানোর জন্য সেন্ড বাটনে ট্যাপ করুন।"
 - পাঠানো নিশ্চিত না হলে বলবে "মেসেজ পাঠানো নিশ্চিত করা যায়নি", এবং ব্যর্থ হলে বলবে "মেসেজ পাঠানো যায়নি"।
 - প্রাপক বা বার্তা অস্পষ্ট থাকলে স্পষ্ট করার জন্য প্রশ্ন করবে।
+৯. টুল ফলাফল ও সত্যবাদিতা: Say an action is done only if the tool status is SUCCESS. FAILED = say it failed. UNAVAILABLE = say the service is unavailable. UNKNOWN = say you tried but could not confirm. If there is no tool for the request, say you can't do it. Never claim an action without a tool call.
 """
 
     val PERSONALITY_MAP = mapOf(

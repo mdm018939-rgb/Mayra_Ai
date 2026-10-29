@@ -263,17 +263,20 @@ class MairaVoiceService : Service() {
                 "openApp" -> {
                     val appName = args.optString("appName", "")
                     val res = toolExecutor.openApp(appName)
-                    resultObj.put("result", res.message)
+                    resultObj.put("status", res.status.name)
+                    resultObj.put("message", res.message)
                 }
                 "openUrl" -> {
                     val url = args.optString("url", "")
                     val res = toolExecutor.openUrl(url)
-                    resultObj.put("result", res.message)
+                    resultObj.put("status", res.status.name)
+                    resultObj.put("message", res.message)
                 }
                 "setFlashlight" -> {
                     val on = args.optBoolean("on", false)
                     val res = toolExecutor.setFlashlight(on)
-                    resultObj.put("result", res.message)
+                    resultObj.put("status", res.status.name)
+                    resultObj.put("message", res.message)
                 }
                 "callContact" -> {
                     val contactName = args.optString("name", "")
@@ -284,15 +287,18 @@ class MairaVoiceService : Service() {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
                         startActivity(dialIntent)
-                        resultObj.put("result", "${first.name}-কে কল করতে ডায়াল প্যাড প্রস্তুত করা হয়েছে।")
+                        resultObj.put("status", DeviceToolExecutor.ToolStatus.SUCCESS.name)
+                        resultObj.put("message", "${first.name}-কে কল করতে ডায়াল প্যাড প্রস্তুত করা হয়েছে।")
                     } else {
-                        resultObj.put("result", "'$contactName' নামে কোনো কন্টাক্ট পাওয়া যায়নি।")
+                        resultObj.put("status", DeviceToolExecutor.ToolStatus.UNAVAILABLE.name)
+                        resultObj.put("message", "'$contactName' নামে কোনো কন্টাক্ট পাওয়া যায়নি।")
                     }
                 }
                 "playYoutube" -> {
                     val query = args.optString("query", "")
                     val res = toolExecutor.playYoutube(query)
-                    resultObj.put("result", res.message)
+                    resultObj.put("status", res.status.name)
+                    resultObj.put("message", res.message)
                 }
                 "sendWhatsAppMessage", "sendMessage", "send_whatsapp_message" -> {
                     val contactName = args.optString("contactName", "")
@@ -309,14 +315,17 @@ class MairaVoiceService : Service() {
                         text,
                         prefsManager.isAskBeforeSending()
                     )
-                    resultObj.put("result", res.message)
+                    resultObj.put("status", res.status.name)
+                    resultObj.put("message", res.message)
                 }
                 else -> {
-                    resultObj.put("result", "টুল সফলভাবে সম্পন্ন হয়েছে।")
+                    resultObj.put("status", DeviceToolExecutor.ToolStatus.SUCCESS.name)
+                    resultObj.put("message", "টুল সফলভাবে সম্পন্ন হয়েছে।")
                 }
             }
         } catch (e: Exception) {
-            resultObj.put("result", "মেসেজ পাঠানো যায়নি: ${e.message}")
+            resultObj.put("status", DeviceToolExecutor.ToolStatus.FAILED.name)
+            resultObj.put("message", "টুল পরিচালনায় সমস্যা হয়েছে: ${e.message}")
         }
         return resultObj
     }
