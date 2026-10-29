@@ -656,88 +656,85 @@ class DeviceToolExecutor(private val context: Context) {
 
     suspend fun sendMessengerMessage(
         recipientName: String,
-        text: String,
-        nameEnglish: String? = null
+        recipientNameEnglish: String?,
+        text: String
     ): ToolResult = withContext(Dispatchers.IO) {
-        if (!Settings.canDrawOverlays(context)) {
-            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Display over other apps (canDrawOverlays) অনুমতি দেওয়া নেই")
-            return@withContext ToolResult(
-                status = ToolStatus.UNAVAILABLE,
-                message = "অন্যান্য অ্যাপের উপরে দেখানোর (Display over other apps) অনুমতি দেওয়া নেই। সেটিংসে গিয়ে অনুমতি দিন।"
-            )
-        }
+        try {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "sendMessengerMessage শুরু করা হচ্ছে: recipientName='$recipientName', recipientNameEnglish='$recipientNameEnglish'")
 
-        val cleanRecipient = recipientName.trim()
-        val cleanText = text.trim()
+            val service = MairaAccessibilityService.instance
+            if (service == null || !MairaAccessibilityService.isServiceConnected) {
+                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Messenger অটোমেশনের জন্য অ্যাক্সেসিবিলিটি সার্ভিস সক্রিয় নেই")
+                return@withContext ToolResult(
+                    status = ToolStatus.UNAVAILABLE,
+                    message = "মেসেঞ্জার অটোমেশনের জন্য অ্যাক্সেসিবিলিটি সার্ভিস সক্রিয় প্রয়োজন। সেটিংসে গিয়ে সার্ভিসটি চালু করুন।"
+                )
+            }
 
-        if (cleanRecipient.isBlank()) {
-            return@withContext ToolResult(ToolStatus.FAILED, "কার কাছে Messenger মেসেজ পাঠাতে চান বলুন।")
-        }
-        if (cleanText.isBlank()) {
-            return@withContext ToolResult(ToolStatus.FAILED, "কী মেসেজ পাঠাতে চান তা বলুন।")
-        }
+            if (!isPackageInstalled("com.facebook.orca")) {
+                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Messenger (com.facebook.orca) ইনস্টল করা নেই")
+                return@withContext ToolResult(
+                    status = ToolStatus.FAILED,
+                    message = "আপনার ফোনে Messenger (com.facebook.orca) ইনস্টল করা নেই।"
+                )
+            }
 
-        if (!isPackageInstalled("com.facebook.orca")) {
-            return@withContext ToolResult(ToolStatus.UNAVAILABLE, "আপনার ফোনে Messenger অ্যাপ ইনস্টল করা নেই।")
-        }
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+                setPackage("com.facebook.orca")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
 
-        if (context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
-            return@withContext ToolResult(ToolStatus.UNAVAILABLE, "কন্টাক্ট নম্বর খুঁজে পেতে কন্টাক্ট পারমিশন (READ_CONTACTS) প্রয়োজন। সেটিংসে গিয়ে অনুমতি দিন।")
-        }
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "Messenger ACTION_SEND ইনটেন্ট চালু করা হচ্ছে...")
+            context.startActivity(sendIntent)
 
-        val matches = searchContacts(cleanRecipient, nameEnglish)
-        if (matches.isEmpty()) {
-            return@withContext ToolResult(ToolStatus.FAILED, "'$cleanRecipient' নামে কোনো কন্টাক্ট খুঁজে পাওয়া যায়নি।")
-        }
+            var nameClicked = false
+            val cleanBengali = recipientName.trim()
+            val cleanEnglish = recipientNameEnglish?.trim() ?: ""
 
-        if (matches.size > 1) {
-            val candidateNames = matches.map { it.name }.distinct().take(4).joinToString(", ")
-            return@withContext ToolResult(ToolStatus.UNKNOWN, "'$cleanRecipient' নামে একাধিক কন্টাক্ট পাওয়া গেছে: $candidateNames। কার কাছে মেসেজ পাঠাতে চান স্পষ্ট করে বলুন।")
-        }
+            for (i in 1..13) {
+                kotlinx.coroutines.delay(300)
+                val currentService = MairaAccessibilityService.instance ?: break
+                val root = currentService.rootInActiveWindow ?: continue
 
-        val selectedMatch = matches.first()
-        val targetPkg = "com.facebook.orca"
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(targetPkg)?.apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
+                var targetNode: android.view.accessibility.AccessibilityNodeInfo? = null
+                if (cleanBengali.isNotBlank()) {
+                    targetNode = currentService.findNodeByTextOrContentDescription(root, cleanBengali)
+                }
+                if (targetNode == null && cleanEnglish.isNotBlank()) {
+                    targetNode = currentService.findNodeByTextOrContentDescription(root, cleanEnglish)
+                }
 
-        if (launchIntent != null) {
-            try {
-                context.startActivity(launchIntent)
-                val service = MairaAccessibilityService.instance
-                var isOpened = false
-                if (service != null && MairaAccessibilityService.isServiceConnected) {
-                    for (i in 0 until 5) {
-                        kotlinx.coroutines.delay(300)
-                        val fgPkg = service.getForegroundPackage()
-                        if (fgPkg.isNotBlank() && fgPkg.lowercase().contains("orca")) {
-                            isOpened = true
-                            break
-                        }
+                if (targetNode != null) {
+                    MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "Messenger-এ প্রাপকের নোড পাওয়া গেছে, ক্লিক করা হচ্ছে...")
+                    val clicked = currentService.performClickOnNode(targetNode)
+                    if (clicked) {
+                        nameClicked = true
+                        MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.INFO, "Messenger-এ প্রাপকের নোডে সফলভাবে ক্লিক করা হয়েছে")
+                        break
                     }
                 }
-
-                if (isOpened) {
-                    ToolResult(
-                        status = ToolStatus.SUCCESS,
-                        message = "মেসেঞ্জারে ${selectedMatch.name}-এর জন্য চ্যাট খোলা হয়েছে।"
-                    )
-                } else {
-                    postActionNotification(
-                        "Messenger চ্যাট খুলতে স্পর্শ করুন",
-                        "${selectedMatch.name}-এর সাথে চ্যাট করতে মেসেঞ্জার খুলুন।",
-                        launchIntent
-                    )
-                    ToolResult(
-                        status = ToolStatus.UNKNOWN,
-                        message = "মেসেঞ্জার চ্যাট সরাসরি খোলা সম্ভব হয়নি। একটি নোটিফিকেশন পাঠানো হয়েছে, সেটিতে ট্যাপ করুন।"
-                    )
-                }
-            } catch (e: Exception) {
-                ToolResult(ToolStatus.FAILED, "মেসেঞ্জার চ্যাট খোলা সম্ভব হয়নি: ${e.localizedMessage}")
             }
-        } else {
-            ToolResult(ToolStatus.FAILED, "মেসেঞ্জার অ্যাপ চালু করা যাচ্ছে না।")
+
+            if (nameClicked) {
+                ToolResult(
+                    status = ToolStatus.UNKNOWN,
+                    message = "মেসেজ প্রস্তুত করা হয়েছে, সেন্ড নিশ্চিত করা যায়নি, সেন্ড বাটন দেখে নিন।"
+                )
+            } else {
+                MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.WARN, "Messenger-এ নামটি পাওয়া যায়নি")
+                ToolResult(
+                    status = ToolStatus.FAILED,
+                    message = "Messenger-এ নামটি পাওয়া যায়নি।"
+                )
+            }
+        } catch (e: Exception) {
+            MairaLogger.log(MairaLogger.Category.ACTION, MairaLogger.Level.ERROR, "sendMessengerMessage-এ সমস্যা: ${e.message}")
+            ToolResult(
+                status = ToolStatus.FAILED,
+                message = "Messenger মেসেজ পাঠাতে সমস্যা হয়েছে: ${e.localizedMessage}"
+            )
         }
     }
 }

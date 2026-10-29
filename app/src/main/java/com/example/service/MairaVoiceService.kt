@@ -363,11 +363,13 @@ class MairaVoiceService : Service() {
                         .ifBlank { args.optString("name", "") }
                     val text = args.optString("text", "")
                         .ifBlank { args.optString("message", "") }
-                    val nameEnglish = args.optString("nameEnglish", "").ifBlank { null }
+                    val nameEnglish = args.optString("nameEnglish", "")
+                        .ifBlank { args.optString("recipientNameEnglish", "") }
+                        .ifBlank { null }
                     val res = toolExecutor.sendMessengerMessage(
                         recipientName,
-                        text,
-                        nameEnglish
+                        nameEnglish,
+                        text
                     )
                     resultObj.put("status", res.status.name)
                     resultObj.put("message", res.message)
