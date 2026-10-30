@@ -79,7 +79,26 @@ class GeminiImageClient(
                 MairaLogger.log(MairaLogger.Category.BUILDER, MairaLogger.Level.ERROR, "Imagen API error ${response.code}: $responseStr")
             }
         } catch (e: Exception) {
+            val rawMsg = e.localizedMessage ?: ""
+            val isNetworkIssue = rawMsg.contains("Unable to resolve host", ignoreCase = true) ||
+                    rawMsg.contains("UnknownHostException", ignoreCase = true) ||
+                    rawMsg.contains("SocketTimeoutException", ignoreCase = true) ||
+                    rawMsg.contains("ConnectException", ignoreCase = true) ||
+                    rawMsg.contains("Failed to connect", ignoreCase = true) ||
+                    e is java.net.UnknownHostException ||
+                    e is java.net.SocketTimeoutException ||
+                    e is java.net.ConnectException
+
+            val userMsg = if (isNetworkIssue) {
+                "ইন্টারনেট সংযোগ সমস্যা: আপনার ইন্টারনেট সংযোগ চেক করুন"
+            } else {
+                "ছবি তৈরি করতে সমস্যা হয়েছে। আপনার Gemini Key এবং প্ল্যান সঠিক আছে কিনা যাচাই করুন।"
+            }
             MairaLogger.log(MairaLogger.Category.BUILDER, MairaLogger.Level.ERROR, "ছবি তৈরিতে নেটওয়ার্ক এরর: ${e.message}")
+            return@withContext ImageResult(
+                success = false,
+                errorMessage = userMsg
+            )
         }
 
         ImageResult(

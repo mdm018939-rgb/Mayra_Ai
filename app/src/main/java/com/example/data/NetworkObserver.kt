@@ -18,7 +18,8 @@ class NetworkObserver(context: Context) {
         return try {
             val activeNetwork = connectivityManager.activeNetwork ?: return false
             val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         } catch (e: Exception) {
             false
         }
@@ -38,18 +39,23 @@ class NetworkObserver(context: Context) {
                 network: Network,
                 networkCapabilities: NetworkCapabilities
             ) {
-                trySend(isCurrentlyConnected())
+                val isValidated = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                        networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                trySend(isValidated)
             }
         }
 
         trySend(isCurrentlyConnected())
 
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-
         try {
-            connectivityManager.registerNetworkCallback(request, callback)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                connectivityManager.registerDefaultNetworkCallback(callback)
+            } else {
+                val request = NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build()
+                connectivityManager.registerNetworkCallback(request, callback)
+            }
         } catch (e: Exception) {
             MairaLogger.log(
                 MairaLogger.Category.CONNECTION,

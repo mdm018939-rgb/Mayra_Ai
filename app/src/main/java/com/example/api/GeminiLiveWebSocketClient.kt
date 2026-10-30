@@ -90,9 +90,25 @@ class GeminiLiveWebSocketClient(
                 setupTimeoutJob?.cancel()
                 isConnected = false
                 _connectionState.value = "সংযোগ ব্যর্থ"
-                val errorMsg = t.localizedMessage ?: "অজানা নেটওয়ার্ক ত্রুটি"
-                MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.ERROR, "WebSocket ব্যর্থতা: $errorMsg")
-                listener.onError("Gemini Live ত্রুটি: $errorMsg")
+                val rawError = t.localizedMessage ?: "অজানা নেটওয়ার্ক ত্রুটি"
+                val isNetworkIssue = rawError.contains("Unable to resolve host", ignoreCase = true) ||
+                        rawError.contains("UnknownHostException", ignoreCase = true) ||
+                        rawError.contains("SocketTimeoutException", ignoreCase = true) ||
+                        rawError.contains("ConnectException", ignoreCase = true) ||
+                        rawError.contains("Failed to connect", ignoreCase = true) ||
+                        rawError.contains("SSLHandshakeException", ignoreCase = true) ||
+                        t is java.net.UnknownHostException ||
+                        t is java.net.SocketTimeoutException ||
+                        t is java.net.ConnectException
+
+                val userFacingError = if (isNetworkIssue) {
+                    "আপনার ইন্টারনেট সংযোগ চেক করুন"
+                } else {
+                    "Gemini Live ত্রুটি: $rawError"
+                }
+
+                MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.ERROR, "WebSocket ব্যর্থতা: $rawError")
+                listener.onError(userFacingError)
 
                 attemptAutoReconnect()
             }

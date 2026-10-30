@@ -156,7 +156,21 @@ class GroqChatClient(
                         return ChatResponse(textResponse = "", modelUsed = selectedModel, errorMessage = errorMsg)
                     }
                 } catch (e: Exception) {
-                    val errorMsg = "Groq সংযোগ ব্যর্থ: ${e.localizedMessage ?: "নেটওয়ার্ক বিচ্ছিন্ন"}"
+                    val rawMsg = e.localizedMessage ?: "নেটওয়ার্ক বিচ্ছিন্ন"
+                    val isNetworkIssue = rawMsg.contains("Unable to resolve host", ignoreCase = true) ||
+                            rawMsg.contains("UnknownHostException", ignoreCase = true) ||
+                            rawMsg.contains("SocketTimeoutException", ignoreCase = true) ||
+                            rawMsg.contains("ConnectException", ignoreCase = true) ||
+                            rawMsg.contains("Failed to connect", ignoreCase = true) ||
+                            e is java.net.UnknownHostException ||
+                            e is java.net.SocketTimeoutException ||
+                            e is java.net.ConnectException
+
+                    val errorMsg = if (isNetworkIssue) {
+                        "ইন্টারনেট সংযোগ সমস্যা: আপনার ইন্টারনেট সংযোগ চেক করুন"
+                    } else {
+                        "Groq সংযোগ ব্যর্থ: $rawMsg"
+                    }
                     MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.ERROR, errorMsg)
                     break
                 }
@@ -235,7 +249,22 @@ class GroqChatClient(
                     return ChatResponse(textResponse = "", errorMessage = errorMsg)
                 }
             } catch (e: Exception) {
-                MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.ERROR, "Gemini Text API নেটওয়ার্ক ত্রুটি: ${e.message}")
+                val rawMsg = e.localizedMessage ?: "নেটওয়ার্ক বিচ্ছিন্ন"
+                val isNetworkIssue = rawMsg.contains("Unable to resolve host", ignoreCase = true) ||
+                        rawMsg.contains("UnknownHostException", ignoreCase = true) ||
+                        rawMsg.contains("SocketTimeoutException", ignoreCase = true) ||
+                        rawMsg.contains("ConnectException", ignoreCase = true) ||
+                        rawMsg.contains("Failed to connect", ignoreCase = true) ||
+                        e is java.net.UnknownHostException ||
+                        e is java.net.SocketTimeoutException ||
+                        e is java.net.ConnectException
+
+                val errorMsg = if (isNetworkIssue) {
+                    "ইন্টারনেট সংযোগ সমস্যা: আপনার ইন্টারনেট সংযোগ চেক করুন"
+                } else {
+                    "Gemini Text API নেটওয়ার্ক ত্রুটি: $rawMsg"
+                }
+                MairaLogger.log(MairaLogger.Category.CHAT, MairaLogger.Level.ERROR, errorMsg)
             }
         }
         return ChatResponse(textResponse = "", errorMessage = "সবগুলো Gemini Key ব্যর্থ হয়েছে বা কোটা শেষ হয়ে গেছে।")
