@@ -1,8 +1,13 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -10,6 +15,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -24,10 +31,22 @@ fun ThemeScreen(
 ) {
     val selectedTheme by prefsManager.themeModeFlow.collectAsState()
 
+    val isDark = when (selectedTheme) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
+
+    val rotationAngle by animateFloatAsState(
+        targetValue = if (isDark) 180f else 0f,
+        animationSpec = tween(durationMillis = 350),
+        label = "theme_rotation_angle"
+    )
+
     val options = listOf(
-        Pair("light", "হালকা (সাদা ও গোলাপী থিম)"),
-        Pair("dark", "গাঢ় (ডার্ক নেভি ও ভায়োলেট থিম)"),
-        Pair("system", "সিস্টেম অনুযায়ী")
+        Triple("light", "হালকা (সাদা ও গোলাপী থিম)", Icons.Filled.WbSunny),
+        Triple("dark", "গাঢ় (ডার্ক নেভি ও ভায়োলেট থিম)", Icons.Filled.NightsStay),
+        Triple("system", "সিস্টেম অনুযায়ী (অটো)", Icons.Filled.SettingsSuggest)
     )
 
     Column(
@@ -45,7 +64,7 @@ fun ThemeScreen(
                 Icon(Icons.Filled.ArrowBack, contentDescription = "পেছনে যান")
             }
             Spacer(modifier = Modifier.width(8.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "থিম সেটিংস",
                     style = MaterialTheme.typography.titleLarge,
@@ -59,11 +78,43 @@ fun ThemeScreen(
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                 )
             }
+
+            // Quick Toggle Button with Animated Sun/Moon Icon
+            IconButton(
+                onClick = {
+                    val next = if (isDark) "light" else "dark"
+                    prefsManager.setThemeMode(next)
+                },
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                    .testTag("theme_quick_toggle")
+            ) {
+                AnimatedContent(
+                    targetState = isDark,
+                    transitionSpec = {
+                        (fadeIn(tween(350)) + scaleIn(tween(350), 0.5f))
+                            .togetherWith(fadeOut(tween(350)) + scaleOut(tween(350), 0.5f))
+                    },
+                    label = "theme_icon_animated"
+                ) { targetDark ->
+                    Icon(
+                        imageVector = if (targetDark) Icons.Filled.NightsStay else Icons.Filled.WbSunny,
+                        contentDescription = "থিম পরিবর্তন",
+                        tint = if (targetDark) MaterialTheme.colorScheme.primary else Color(0xFFFFB300),
+                        modifier = Modifier
+                            .size(24.dp)
+                            .graphicsLayer {
+                                rotationZ = rotationAngle
+                            }
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        options.forEach { (key, label) ->
+        options.forEach { (key, label, icon) ->
             val isSelected = selectedTheme == key
             Card(
                 modifier = Modifier
@@ -82,7 +133,23 @@ fun ThemeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                     RadioButton(
                         selected = isSelected,
                         onClick = {
