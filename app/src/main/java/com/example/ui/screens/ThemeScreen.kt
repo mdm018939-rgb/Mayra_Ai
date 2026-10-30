@@ -15,17 +15,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.EncryptedPreferencesManager
-import com.example.ui.theme.ThemeTouchManager
 
 @Composable
 fun ThemeScreen(
@@ -52,8 +48,6 @@ fun ThemeScreen(
         Triple("dark", "গাঢ় (ডার্ক নেভি ও ভায়োলেট থিম)", Icons.Filled.NightsStay),
         Triple("system", "সিস্টেম অনুযায়ী (অটো)", Icons.Filled.SettingsSuggest)
     )
-
-    var quickToggleOffset by remember { mutableStateOf<Offset?>(null) }
 
     Column(
         modifier = modifier
@@ -88,20 +82,12 @@ fun ThemeScreen(
             // Quick Toggle Button with Animated Sun/Moon Icon
             IconButton(
                 onClick = {
-                    ThemeTouchManager.lastTouchPoint = quickToggleOffset
                     val next = if (isDark) "light" else "dark"
                     prefsManager.setThemeMode(next)
                 },
                 modifier = Modifier
                     .size(44.dp)
                     .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                    .onGloballyPositioned { coords ->
-                        val pos = coords.positionInWindow()
-                        quickToggleOffset = Offset(
-                            pos.x + coords.size.width / 2f,
-                            pos.y + coords.size.height / 2f
-                        )
-                    }
                     .testTag("theme_quick_toggle")
             ) {
                 AnimatedContent(
@@ -130,20 +116,11 @@ fun ThemeScreen(
 
         options.forEach { (key, label, icon) ->
             val isSelected = selectedTheme == key
-            var cardOffset by remember { mutableStateOf<Offset?>(null) }
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 6.dp)
-                    .onGloballyPositioned { coords ->
-                        val pos = coords.positionInWindow()
-                        cardOffset = Offset(
-                            pos.x + coords.size.width / 2f,
-                            pos.y + coords.size.height / 2f
-                        )
-                    }
                     .clickable {
-                        ThemeTouchManager.lastTouchPoint = cardOffset
                         prefsManager.setThemeMode(key)
                     },
                 shape = RoundedCornerShape(18.dp),
@@ -176,7 +153,6 @@ fun ThemeScreen(
                     RadioButton(
                         selected = isSelected,
                         onClick = {
-                            ThemeTouchManager.lastTouchPoint = cardOffset
                             prefsManager.setThemeMode(key)
                         }
                     )

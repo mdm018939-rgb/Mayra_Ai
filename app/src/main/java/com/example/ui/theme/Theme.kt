@@ -1,37 +1,28 @@
 package com.example.ui.theme
 
 import android.app.Activity
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.NightsStay
+import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
-import kotlin.math.hypot
-
-object ThemeTouchManager {
-    var lastTouchPoint: Offset? = null
-}
+import kotlinx.coroutines.delay
 
 private val LightColorScheme = lightColorScheme(
     primary = LightPrimary,
@@ -112,14 +103,14 @@ fun MairaTheme(
         colorScheme = animatedColorScheme,
         typography = Typography
     ) {
-        CircularRevealThemeContainer(themeMode = themeMode) {
+        ThemeLoadingOverlayContainer(themeMode = themeMode) {
             content()
         }
     }
 }
 
 @Composable
-fun CircularRevealThemeContainer(
+fun ThemeLoadingOverlayContainer(
     themeMode: String,
     content: @Composable () -> Unit
 ) {
@@ -129,81 +120,88 @@ fun CircularRevealThemeContainer(
         else -> isSystemInDarkTheme()
     }
 
-    var rootSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
-
     var previousDarkState by remember { mutableStateOf<Boolean?>(null) }
-    var animatingPreviousBg by remember { mutableStateOf<Color?>(null) }
-    var animTouchPoint by remember { mutableStateOf<Offset?>(null) }
-
-    val animProgress = remember { Animatable(1f) }
+    var isThemeChanging by remember { mutableStateOf(false) }
 
     val primaryColor = MaterialTheme.colorScheme.primary
 
     LaunchedEffect(isDark) {
         if (previousDarkState != null && previousDarkState != isDark) {
-            val touch = ThemeTouchManager.lastTouchPoint
-                ?: Offset(rootSize.width / 2f, rootSize.height / 2f)
-            animTouchPoint = touch
-            animatingPreviousBg = if (previousDarkState == true) DarkBackground else LightBackground
-
-            animProgress.snapTo(0f)
-            animProgress.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing)
-            )
+            isThemeChanging = true
+            delay(750) // Show rotating indicator for ~0.75 seconds while colors crossfade smoothly behind
+            isThemeChanging = false
         }
         previousDarkState = isDark
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onGloballyPositioned { coordinates ->
-                rootSize = coordinates.size.toSize()
-            }
-            .drawWithContent {
-                val progress = animProgress.value
-                val prevBg = animatingPreviousBg
+    Box(modifier = Modifier.fillMaxSize()) {
+        content()
 
-                if (progress < 1f && prevBg != null && rootSize.width > 0f) {
-                    val center = animTouchPoint ?: Offset(rootSize.width / 2f, rootSize.height / 2f)
+        AnimatedVisibility(
+            visible = isThemeChanging,
+            enter = fadeIn(animationSpec = tween(180)),
+            exit = fadeOut(animationSpec = tween(280))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.35f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp,
+                    shadowElevation = 12.dp,
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        val infiniteTransition = rememberInfiniteTransition(label = "theme_spin_transition")
+                        val spinAngle by infiniteTransition.animateFloat(
+                            initialValue = 0f,
+                            targetValue = 360f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1000, easing = LinearEasing),
+                                repeatMode = RepeatMode.Restart
+                            ),
+                            label = "spin_angle_float"
+                        )
 
-                    val dx = maxOf(center.x, rootSize.width - center.x)
-                    val dy = maxOf(center.y, rootSize.height - center.y)
-                    val maxRadius = hypot(dx.toDouble(), dy.toDouble()).toFloat()
-                    val currentRadius = maxRadius * progress
-
-                    // 1. Draw base layer with previous theme background color
-                    drawRect(color = prevBg)
-
-                    // 2. Clip canvas to expanding circle and draw new theme content
-                    val circlePath = Path().apply {
-                        addOval(
-                            Rect(
-                                left = center.x - currentRadius,
-                                top = center.y - currentRadius,
-                                right = center.x + currentRadius,
-                                bottom = center.y + currentRadius
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.fillMaxSize(),
+                                color = primaryColor,
+                                strokeWidth = 3.dp
                             )
+                            Icon(
+                                imageVector = if (isDark) Icons.Filled.NightsStay else Icons.Filled.WbSunny,
+                                contentDescription = null,
+                                tint = if (isDark) primaryColor else Color(0xFFFFB300),
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .graphicsLayer { rotationZ = spinAngle }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Text(
+                            text = if (isDark) "গাঢ় থিমে পরিবর্তন হচ্ছে..." else "হালকা থিমে পরিবর্তন হচ্ছে...",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 14.sp
                         )
                     }
-
-                    clipPath(circlePath) {
-                        this@drawWithContent.drawContent()
-                    }
-
-                    // 3. Draw a subtle glowing edge ring around the expanding circle
-                    drawCircle(
-                        color = primaryColor.copy(alpha = (1f - progress).coerceIn(0f, 0.6f)),
-                        radius = currentRadius,
-                        center = center,
-                        style = Stroke(width = 3.dp.toPx())
-                    )
-                } else {
-                    drawContent()
                 }
             }
-    ) {
-        content()
+        }
     }
 }
