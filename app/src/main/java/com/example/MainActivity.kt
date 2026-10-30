@@ -315,18 +315,6 @@ fun MairaAppContent(
                     speakerRms = speakerRms,
                     userNickname = userNickname,
                     isSessionActive = isSessionActive,
-                    onSendMessage = { handleSendMessage(it) },
-                    onQuickActionClick = { key ->
-                        when (key) {
-                            "open_app" -> currentScreen = "quick_actions"
-                            "make_call" -> currentScreen = "quick_actions"
-                            "website_builder" -> currentScreen = "website_builder"
-                            "sketch" -> currentScreen = "sketch"
-                            "voice_talk" -> handleMicButtonClick()
-                            else -> currentScreen = "chat"
-                        }
-                    },
-                    onNavigateToQuickActions = { currentScreen = "quick_actions" },
                     onNavigateToConnections = { currentScreen = "connections" },
                     hasKeys = hasKeys
                 )
@@ -356,7 +344,18 @@ fun MairaAppContent(
                 )
 
                 "settings" -> SettingsScreen(
-                    onNavigateToSubPage = { page -> currentScreen = page }
+                    onNavigateToSubPage = { page -> currentScreen = page },
+                    onQuickActionClick = { key ->
+                        when (key) {
+                            "open_app" -> currentScreen = "quick_actions"
+                            "make_call" -> currentScreen = "quick_actions"
+                            "website_builder" -> currentScreen = "website_builder"
+                            "sketch" -> currentScreen = "sketch"
+                            "voice_talk" -> handleMicButtonClick()
+                            else -> currentScreen = "chat"
+                        }
+                    },
+                    onNavigateToQuickActions = { currentScreen = "quick_actions" }
                 )
 
                 "quick_actions" -> QuickActionsScreen(
