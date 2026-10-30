@@ -257,18 +257,31 @@ fun MairaAppContent(
 
     // Network observer for live internet state
     val networkObserver = remember(context) { NetworkObserver(context) }
-    var isConnected by remember { mutableStateOf(networkObserver.isCurrentlyConnected()) }
+    val isConnected by networkObserver.isConnectedState.collectAsState()
 
-    LaunchedEffect(networkObserver) {
-        networkObserver.isConnectedFlow.collect { connected ->
-            isConnected = connected
+    var wasVoiceSessionActiveBeforeDisconnect by remember { mutableStateOf(false) }
+
+    // Handle session teardown and automatic reconnect during internet drops
+    LaunchedEffect(isConnected) {
+        if (!isConnected) {
+            if (MairaVoiceService.isSessionActive()) {
+                wasVoiceSessionActiveBeforeDisconnect = true
+                onStopVoiceService()
+            }
+        } else {
+            if (wasVoiceSessionActiveBeforeDisconnect) {
+                wasVoiceSessionActiveBeforeDisconnect = false
+                if (geminiKey.isNotBlank()) {
+                    onStartVoiceService()
+                }
+            }
         }
     }
 
     if (!isConnected) {
         NoInternetScreen(
             onRetry = {
-                isConnected = networkObserver.isCurrentlyConnected()
+                networkObserver.forceRefresh()
             }
         )
     } else {
