@@ -22,6 +22,7 @@ import com.example.api.GeminiImageClient
 import com.example.api.GroqChatClient
 import com.example.data.EncryptedPreferencesManager
 import com.example.data.MairaCrashHandler
+import com.example.data.NetworkObserver
 import com.example.data.db.AppDatabase
 import com.example.data.db.ChatMessageEntity
 import com.example.personality.PersonalityPrompts
@@ -254,20 +255,37 @@ fun MairaAppContent(
         )
     }
 
-    Scaffold(
-        bottomBar = {
-            if (currentScreen in listOf("home", "chat", "triggers", "settings")) {
-                MairaBottomBar(
-                    currentScreen = currentScreen,
-                    onNavigate = { currentScreen = it },
-                    isSessionActive = isSessionActive,
-                    onMicClick = { handleMicButtonClick() }
-                )
-            }
+    // Network observer for live internet state
+    val networkObserver = remember(context) { NetworkObserver(context) }
+    var isConnected by remember { mutableStateOf(networkObserver.isCurrentlyConnected()) }
+
+    LaunchedEffect(networkObserver) {
+        networkObserver.isConnectedFlow.collect { connected ->
+            isConnected = connected
         }
-    ) { paddingValues ->
-        Box(modifier = Modifier.padding(paddingValues)) {
-            when (currentScreen) {
+    }
+
+    if (!isConnected) {
+        NoInternetScreen(
+            onRetry = {
+                isConnected = networkObserver.isCurrentlyConnected()
+            }
+        )
+    } else {
+        Scaffold(
+            bottomBar = {
+                if (currentScreen in listOf("home", "chat", "triggers", "settings")) {
+                    MairaBottomBar(
+                        currentScreen = currentScreen,
+                        onNavigate = { currentScreen = it },
+                        isSessionActive = isSessionActive,
+                        onMicClick = { handleMicButtonClick() }
+                    )
+                }
+            }
+        ) { paddingValues ->
+            Box(modifier = Modifier.padding(paddingValues)) {
+                when (currentScreen) {
                 "home" -> HomeScreen(
                     status = statusMessage,
                     micRms = micRms,
@@ -395,4 +413,5 @@ fun MairaAppContent(
             }
         }
     }
+}
 }
