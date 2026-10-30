@@ -23,6 +23,7 @@ import com.example.api.GroqChatClient
 import com.example.data.EncryptedPreferencesManager
 import com.example.data.MairaCrashHandler
 import com.example.data.NetworkObserver
+import com.example.data.ThemeLoadingManager
 import com.example.data.db.AppDatabase
 import com.example.data.db.ChatMessageEntity
 import com.example.personality.PersonalityPrompts
@@ -94,6 +95,11 @@ class MainActivity : ComponentActivity() {
         }
         startService(intent)
     }
+
+    override fun onStop() {
+        super.onStop()
+        ThemeLoadingManager.dismissThemeLoading()
+    }
 }
 
 @Composable
@@ -109,6 +115,10 @@ fun MairaAppContent(
 
     var currentScreen by remember { mutableStateOf("home") }
     var currentConvoId by remember { mutableStateOf(UUID.randomUUID().toString()) }
+
+    LaunchedEffect(currentScreen) {
+        ThemeLoadingManager.dismissThemeLoading()
+    }
 
     // Dialog state for mic & crash feedback
     var resultDialogData by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }

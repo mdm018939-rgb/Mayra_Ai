@@ -294,6 +294,7 @@ class EncryptedPreferencesManager(context: Context) {
     fun setThemeMode(mode: String) {
         prefs.edit().putString("theme_mode", mode).apply()
         _themeModeFlow.value = mode
+        ThemeLoadingManager.triggerThemeChange()
         MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "থিম পরিবর্তন: $mode")
     }
 

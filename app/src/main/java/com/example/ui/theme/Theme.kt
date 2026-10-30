@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import com.example.data.ThemeLoadingManager
 import kotlinx.coroutines.delay
 
 private val LightColorScheme = lightColorScheme(
@@ -120,19 +121,8 @@ fun ThemeLoadingOverlayContainer(
         else -> isSystemInDarkTheme()
     }
 
-    var previousDarkState by remember { mutableStateOf<Boolean?>(null) }
-    var isThemeChanging by remember { mutableStateOf(false) }
-
+    val isThemeChanging by ThemeLoadingManager.isLoading.collectAsState()
     val primaryColor = MaterialTheme.colorScheme.primary
-
-    LaunchedEffect(isDark) {
-        if (previousDarkState != null && previousDarkState != isDark) {
-            isThemeChanging = true
-            delay(750) // Show rotating indicator for ~0.75 seconds while colors crossfade smoothly behind
-            isThemeChanging = false
-        }
-        previousDarkState = isDark
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         content()
