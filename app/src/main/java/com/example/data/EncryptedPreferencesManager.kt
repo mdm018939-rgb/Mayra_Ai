@@ -271,22 +271,31 @@ class EncryptedPreferencesManager(context: Context) {
     }
 
     // Personality
+    private val validPersonalityStyles = listOf(
+        "রোমান্টিক সঙ্গী (ভালো প্রেমিকা)",
+        "রোমান্টিক সঙ্গী (সন্দেহবাজ প্রেমিকা)",
+        "রোমান্টিক সঙ্গী (রাগী প্রেমিকা)"
+    )
+
     private val _personalityFlow = MutableStateFlow(getPersonality())
     val personalityFlow: StateFlow<String> = _personalityFlow.asStateFlow()
 
     fun getPersonality(): String {
         val saved = prefs.getString("selected_personality", "রোমান্টিক সঙ্গী (ভালো প্রেমিকা)") ?: "রোমান্টিক সঙ্গী (ভালো প্রেমিকা)"
-        return if (saved == "রোমান্টিক সঙ্গী (বউ মোড)" || saved == "রোমান্টিক সঙ্গী") {
-            "রোমান্টিক সঙ্গী (ভালো প্রেমিকা)"
-        } else {
-            saved
+        if (saved in validPersonalityStyles) {
+            return saved
         }
+        val fallback = "রোমান্টিক সঙ্গী (ভালো প্রেমিকা)"
+        prefs.edit().putString("selected_personality", fallback).apply()
+        _personalityFlow.value = fallback
+        return fallback
     }
 
     fun setPersonality(personality: String) {
-        prefs.edit().putString("selected_personality", personality).apply()
-        _personalityFlow.value = personality
-        MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "পারসোনালিটি পরিবর্তন: $personality")
+        val target = if (personality in validPersonalityStyles) personality else "রোমান্টিক সঙ্গী (ভালো প্রেমিকা)"
+        prefs.edit().putString("selected_personality", target).apply()
+        _personalityFlow.value = target
+        MairaLogger.log(MairaLogger.Category.UI, MairaLogger.Level.INFO, "পারসোনালিটি পরিবর্তন: $target")
     }
 
     // Theme Choice

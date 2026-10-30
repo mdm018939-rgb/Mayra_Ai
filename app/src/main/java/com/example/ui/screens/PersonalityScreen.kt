@@ -2,11 +2,10 @@ package com.example.ui.screens
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -23,12 +22,6 @@ import com.example.data.EncryptedPreferencesManager
 
 data class RomanticSubStyle(
     val name: String,
-    val title: String,
-    val desc: String,
-    val icon: ImageVector
-)
-
-data class PersonalityItem(
     val title: String,
     val desc: String,
     val icon: ImageVector
@@ -66,29 +59,19 @@ fun PersonalityScreen(
         )
     }
 
-    val isRomanticSelected = selectedPersonality.startsWith("রোমান্টিক সঙ্গী")
-
-    val otherPersonalities = remember {
-        listOf(
-            PersonalityItem("সাধারণ", "স্পষ্ট, মার্জিত ও নিরপেক্ষ এআই সহকারী", Icons.Filled.Face),
-            PersonalityItem("বন্ধুসুলভ", "উৎফুল্ল, বন্ধুভাবাপন্ন ও ক্যাজুয়াল সঙ্গিনী", Icons.Filled.People),
-            PersonalityItem("পেশাদার", "সংক্ষিপ্ত, ফরমাল ও গোছানো ব্যক্তিত্ব", Icons.Filled.Work),
-            PersonalityItem("মজার", "হালকা রসিকতা ও চমৎকার সেন্স অব হিউমার", Icons.Filled.SentimentVerySatisfied),
-            PersonalityItem("সঙ্গী", "উষ্ণ, যত্নশীল ও সবসময় পাশে থাকার মতো", Icons.Filled.Handshake),
-            PersonalityItem("শিক্ষক", "ধৈর্যশীল ও সুন্দর ব্যাখ্যাকারী শিক্ষক", Icons.Filled.School),
-            PersonalityItem("ডেভেলপার", "টেকনিক্যাল, লজিক্যাল ও কোডিং বিশেষজ্ঞ", Icons.Filled.Code),
-            PersonalityItem("ক্ষুধার্ত", "ভোজনরসিক, সবসময় মজার খাবারের ভক্ত", Icons.Filled.Restaurant),
-            PersonalityItem("নাটকি", "নাটকীয়, ফিলমি ফ্ল্যায়ার ও রোমাঞ্চকর ব্যক্তিত্ব", Icons.Filled.Movie)
-        )
-    }
+    // Ensure selectedPersonality maps to one of the 3 romantic sub-styles
+    val activeSub = romanticSubStyles.find { it.name == selectedPersonality }
+        ?: romanticSubStyles.first()
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(top = 16.dp, start = 16.dp, end = 16.dp)
+            .verticalScroll(rememberScrollState())
             .testTag("personality_screen")
     ) {
+        // Top Bar
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
@@ -113,204 +96,146 @@ fun PersonalityScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        // Romantic Companion Hero Card (Always Active & Selected)
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 80.dp)
+                .animateContentSize()
+                .testTag("personality_card_romantic_hero"),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            ),
+            elevation = CardDefaults.cardElevation(4.dp)
         ) {
-            // Romantic Companion Hero Card
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .animateContentSize()
-                        .clickable {
-                            if (!isRomanticSelected) {
-                                val target = "রোমান্টিক সঙ্গী (ভালো প্রেমিকা)"
-                                selectedPersonality = target
-                                prefsManager.setPersonality(target)
-                            }
-                        }
-                        .testTag("personality_card_romantic_hero"),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isRomanticSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    elevation = CardDefaults.cardElevation(if (isRomanticSelected) 4.dp else 1.dp)
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .background(
-                                        if (isRomanticSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                        shape = RoundedCornerShape(14.dp)
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.Favorite,
-                                    contentDescription = null,
-                                    tint = if (isRomanticSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "রোমান্টিক সঙ্গী",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    "মিষ্টি প্রেমিকা ও অনুরাগী সহচরী",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                )
-                            }
-                            if (isRomanticSelected) {
-                                Icon(
-                                    Icons.Filled.CheckCircle,
-                                    contentDescription = "নির্বাচিত",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Text(
-                            text = "প্লেফুল সাব-স্টাইল বেছে নাও:",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                MaterialTheme.colorScheme.primary,
+                                shape = RoundedCornerShape(16.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.Favorite,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(26.dp)
                         )
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "রোমান্টিক সঙ্গী",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            "মিষ্টি প্রেমিকা ও অনুরাগী সহচরী",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+                        )
+                    }
+                    Icon(
+                        Icons.Filled.CheckCircle,
+                        contentDescription = "নির্বাচিত",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
-                        // Sub-style chips / buttons
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            romanticSubStyles.forEach { subStyle ->
-                                val isSubSelected = selectedPersonality == subStyle.name
-                                FilterChip(
-                                    selected = isSubSelected,
-                                    onClick = {
-                                        selectedPersonality = subStyle.name
-                                        prefsManager.setPersonality(subStyle.name)
-                                    },
-                                    label = {
-                                        Text(
-                                            subStyle.title,
-                                            fontWeight = if (isSubSelected) FontWeight.Bold else FontWeight.Normal,
-                                            fontSize = 12.sp
-                                        )
-                                    },
-                                    leadingIcon = if (isSubSelected) {
-                                        {
-                                            Icon(
-                                                Icons.Filled.Check,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                    } else null,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("romantic_substyle_${subStyle.title}")
+                Text(
+                    text = "প্লেফুল সাব-স্টাইল বেছে নাও:",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Sub-style chips / buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    romanticSubStyles.forEach { subStyle ->
+                        val isSubSelected = activeSub.name == subStyle.name
+                        FilterChip(
+                            selected = isSubSelected,
+                            onClick = {
+                                selectedPersonality = subStyle.name
+                                prefsManager.setPersonality(subStyle.name)
+                            },
+                            label = {
+                                Text(
+                                    subStyle.title,
+                                    fontWeight = if (isSubSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 12.sp
                                 )
-                            }
-                        }
-
-                        // Selected sub-style description callout
-                        val activeSub = romanticSubStyles.find { it.name == selectedPersonality }
-                            ?: romanticSubStyles.first()
-
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Box(
+                            },
+                            leadingIcon = if (isSubSelected) {
+                                {
+                                    Icon(
+                                        Icons.Filled.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
+                            ),
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = "✨ ${activeSub.desc}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                                .weight(1f)
+                                .testTag("romantic_substyle_${subStyle.title}")
+                        )
                     }
                 }
-            }
 
-            // Other Personalities Header
-            item {
-                Text(
-                    text = "অন্যান্য পারসোনালিটি",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                )
-            }
+                Spacer(modifier = Modifier.height(14.dp))
 
-            // Other Personalities Items
-            items(otherPersonalities) { item ->
-                val isSelected = item.title == selectedPersonality
-                Card(
+                // Selected sub-style description callout box
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            selectedPersonality = item.title
-                            prefsManager.setPersonality(item.title)
-                        }
-                        .testTag("personality_card_${item.title}"),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                    )
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(
-                                    if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(12.dp)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                item.icon,
-                                contentDescription = null,
-                                tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text(item.desc, style = MaterialTheme.typography.bodyMedium, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        }
-                        if (isSelected) {
-                            Icon(Icons.Filled.Check, contentDescription = "নির্বাচিত", tint = MaterialTheme.colorScheme.primary)
-                        }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = activeSub.icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = activeSub.desc,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(80.dp))
     }
 }
