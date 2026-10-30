@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -13,7 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -23,19 +21,10 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun SettingsScreen(
     onNavigateToSubPage: (String) -> Unit,
-    onQuickActionClick: (String) -> Unit = {},
-    onNavigateToQuickActions: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val quickItems = listOf(
-        QuickActionItem("অ্যাপ খোলো", "ইউটিউব খোলো", Icons.Filled.Apps, "open_app"),
-        QuickActionItem("কল করো", "মাকে কল করো", Icons.Filled.Call, "make_call"),
-        QuickActionItem("ওয়েবসাইট বানাও", "ক্যাফের ওয়েবসাইট বানাও", Icons.Filled.Code, "website_builder"),
-        QuickActionItem("ছবি আঁকো", "একটা ছবি আঁকো", Icons.Filled.Palette, "sketch"),
-        QuickActionItem("কথা বলো", "ভয়েস কথোপকথন", Icons.Filled.Mic, "voice_talk")
-    )
-
     val menuItems = listOf(
+        SettingsMenuItem("কুইক অ্যাকশন", "অ্যাপ খোলা, কল করা ও আরও দ্রুত কাজ", Icons.Filled.FlashOn, "quick_actions"),
         SettingsMenuItem("সংযোগ", "Gemini ও Groq API Keys যুক্ত করো", Icons.Filled.Key, "connections"),
         SettingsMenuItem("পারসোনালিটি", "মাইরার স্বভাব ও কথা বলার ধরন বেছে নাও", Icons.Filled.Face, "personality"),
         SettingsMenuItem("থিম", "হালকা / গাঢ় / সিস্টেম থিম", Icons.Filled.Palette, "theme"),
@@ -64,80 +53,10 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.fillMaxWidth().padding(bottom = 80.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(bottom = 80.dp),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            // Quick Actions Section on Settings Screen
-            item {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "কুইক অ্যাকশন",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = "সব দেখো",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .clickable(onClick = onNavigateToQuickActions)
-                                .testTag("settings_see_all_quick_actions")
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(quickItems) { item ->
-                            Card(
-                                modifier = Modifier
-                                    .width(145.dp)
-                                    .clickable { onQuickActionClick(item.actionKey) }
-                                    .testTag("settings_quick_card_${item.actionKey}"),
-                                shape = RoundedCornerShape(20.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(item.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(item.title, style = MaterialTheme.typography.titleMedium, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                    Text(item.subtitle, style = MaterialTheme.typography.bodyMedium, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Divider / Section Title for Settings
-            item {
-                Text(
-                    text = "সাধারণ সেটিংস",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            }
-
-            // Settings Menu Items
             items(menuItems) { item ->
                 Card(
                     modifier = Modifier
@@ -171,13 +90,6 @@ fun SettingsScreen(
         }
     }
 }
-
-data class QuickActionItem(
-    val title: String,
-    val subtitle: String,
-    val icon: ImageVector,
-    val actionKey: String
-)
 
 data class SettingsMenuItem(
     val title: String,

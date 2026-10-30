@@ -73,6 +73,7 @@ fun QuickActionsScreen(
             columns = GridCells.Fixed(2),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(bottom = 90.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -110,8 +111,6 @@ fun QuickActionsScreen(
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(80.dp))
     }
 }
 

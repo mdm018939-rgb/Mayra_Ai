@@ -344,18 +344,7 @@ fun MairaAppContent(
                 )
 
                 "settings" -> SettingsScreen(
-                    onNavigateToSubPage = { page -> currentScreen = page },
-                    onQuickActionClick = { key ->
-                        when (key) {
-                            "open_app" -> currentScreen = "quick_actions"
-                            "make_call" -> currentScreen = "quick_actions"
-                            "website_builder" -> currentScreen = "website_builder"
-                            "sketch" -> currentScreen = "sketch"
-                            "voice_talk" -> handleMicButtonClick()
-                            else -> currentScreen = "chat"
-                        }
-                    },
-                    onNavigateToQuickActions = { currentScreen = "quick_actions" }
+                    onNavigateToSubPage = { page -> currentScreen = page }
                 )
 
                 "quick_actions" -> QuickActionsScreen(
@@ -368,7 +357,7 @@ fun MairaAppContent(
                             else -> handleMicButtonClick()
                         }
                     },
-                    onBack = { currentScreen = "home" }
+                    onBack = { currentScreen = "settings" }
                 )
 
                 "website_builder" -> WebsiteBuilderScreen(
