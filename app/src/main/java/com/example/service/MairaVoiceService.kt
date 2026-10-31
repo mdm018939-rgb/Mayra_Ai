@@ -86,11 +86,6 @@ class MairaVoiceService : Service() {
     private var noiseSuppressor: NoiseSuppressor? = null
     private var automaticGainControl: AutomaticGainControl? = null
 
-    // Audio Routing Saved States
-    private var savedAudioMode: Int = AudioManager.MODE_NORMAL
-    private var savedIsSpeakerphoneOn: Boolean = false
-    private var isAudioModeSaved: Boolean = false
-
     // Audio Track
     private var audioTrack: AudioTrack? = null
     private val audioQueue = ConcurrentLinkedQueue<ByteArray>()
@@ -715,67 +710,6 @@ class MairaVoiceService : Service() {
         }
     }
 
-    private fun setupAudioRoutingForSession() {
-        try {
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            if (!isAudioModeSaved) {
-                savedAudioMode = audioManager.mode
-                @Suppress("DEPRECATION")
-                savedIsSpeakerphoneOn = audioManager.isSpeakerphoneOn
-                isAudioModeSaved = true
-            }
-
-            // Set MODE_IN_COMMUNICATION for hardware AEC
-            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-
-            // Route audio output to speakerphone so playback doesn't go to earpiece
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                try {
-                    val speakerDevice = audioManager.availableCommunicationDevices.firstOrNull {
-                        it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-                    }
-                    if (speakerDevice != null) {
-                        audioManager.setCommunicationDevice(speakerDevice)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        audioManager.isSpeakerphoneOn = true
-                    }
-                } catch (e: Exception) {
-                    @Suppress("DEPRECATION")
-                    audioManager.isSpeakerphoneOn = true
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                audioManager.isSpeakerphoneOn = true
-            }
-        } catch (e: Exception) {
-            MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.WARN, "Audio routing setup সমস্যা: ${e.message}")
-        }
-    }
-
-    private fun restoreAudioRoutingAfterSession() {
-        try {
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                try {
-                    audioManager.clearCommunicationDevice()
-                } catch (_: Exception) {}
-            }
-            if (isAudioModeSaved) {
-                @Suppress("DEPRECATION")
-                audioManager.isSpeakerphoneOn = savedIsSpeakerphoneOn
-                audioManager.mode = savedAudioMode
-                isAudioModeSaved = false
-            } else {
-                @Suppress("DEPRECATION")
-                audioManager.isSpeakerphoneOn = false
-                audioManager.mode = AudioManager.MODE_NORMAL
-            }
-        } catch (e: Exception) {
-            MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.WARN, "Audio routing restore সমস্যা: ${e.message}")
-        }
-    }
-
     private fun initAudioTrack() {
         val sampleRate = 24000
         val minBufferSize = AudioTrack.getMinBufferSize(
@@ -809,9 +743,14 @@ class MairaVoiceService : Service() {
             AudioManager.AUDIO_SESSION_ID_GENERATE
         )
 
-        // Request audio focus and setup audio mode/speakerphone routing
+        // Request audio focus and ensure normal audio mode for media volume control
         requestAudioFocus()
-        setupAudioRoutingForSession()
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.mode = AudioManager.MODE_NORMAL
+        } catch (e: Exception) {
+            MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.WARN, "Audio mode normal করার চেষ্টা: ${e.message}")
+        }
 
         audioTrack?.play()
         isPlaying = true
@@ -917,7 +856,17 @@ class MairaVoiceService : Service() {
         audioTrack = null
 
         abandonAudioFocus()
-        restoreAudioRoutingAfterSession()
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try { audioManager.clearCommunicationDevice() } catch (_: Exception) {}
+            }
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = false
+            audioManager.mode = AudioManager.MODE_NORMAL
+        } catch (e: Exception) {
+            MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.WARN, "Audio mode restore সমস্যা: ${e.message}")
+        }
 
         liveClient?.disconnect()
         liveClient = null
