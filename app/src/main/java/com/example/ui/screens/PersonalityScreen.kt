@@ -53,13 +53,19 @@ fun PersonalityScreen(
             RomanticSubStyle(
                 name = "রোমান্টিক সঙ্গী (রাগী প্রেমিকা)",
                 title = "রাগী প্রেমিকা",
-                desc = "মিষ্টি অভিমান (playful abhiman) ও আদুরে খুনসুটি — কাজের পর কপট রাগ দেখাবে",
+                desc = "ঝাঁঝালো অভিমান ও স্পষ্ট রাগের অভিনয় — কাজ শেষে রাগের মন্তব্য",
                 icon = Icons.Filled.MoodBad
+            ),
+            RomanticSubStyle(
+                name = "রোমান্টিক সঙ্গী (ফ্লার্টি প্রেমিকা)",
+                title = "ফ্লার্টি প্রেমিকা",
+                desc = "রহস্যময়, আকর্ষণীয় ও দুষ্টু-মিষ্টি ফ্লার্টি প্রেমিকা",
+                icon = Icons.Filled.AutoAwesome
             )
         )
     }
 
-    // Ensure selectedPersonality maps to one of the 3 romantic sub-styles
+    // Ensure selectedPersonality maps to one of the 4 romantic sub-styles, default to first (ভালো প্রেমিকা)
     val activeSub = romanticSubStyles.find { it.name == selectedPersonality }
         ?: romanticSubStyles.first()
 
@@ -165,44 +171,52 @@ fun PersonalityScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Sub-style chips / buttons
-                Row(
+                // Sub-style chips in 2x2 grid layout
+                val chipRows = romanticSubStyles.chunked(2)
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    romanticSubStyles.forEach { subStyle ->
-                        val isSubSelected = activeSub.name == subStyle.name
-                        FilterChip(
-                            selected = isSubSelected,
-                            onClick = {
-                                selectedPersonality = subStyle.name
-                                prefsManager.setPersonality(subStyle.name)
-                            },
-                            label = {
-                                Text(
-                                    subStyle.title,
-                                    fontWeight = if (isSubSelected) FontWeight.Bold else FontWeight.Normal,
-                                    fontSize = 12.sp
+                    chipRows.forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowItems.forEach { subStyle ->
+                                val isSubSelected = activeSub.name == subStyle.name
+                                FilterChip(
+                                    selected = isSubSelected,
+                                    onClick = {
+                                        selectedPersonality = subStyle.name
+                                        prefsManager.setPersonality(subStyle.name)
+                                    },
+                                    label = {
+                                        Text(
+                                            subStyle.title,
+                                            fontWeight = if (isSubSelected) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 12.sp
+                                        )
+                                    },
+                                    leadingIcon = if (isSubSelected) {
+                                        {
+                                            Icon(
+                                                Icons.Filled.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    } else null,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                        selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("romantic_substyle_${subStyle.title}")
                                 )
-                            },
-                            leadingIcon = if (isSubSelected) {
-                                {
-                                    Icon(
-                                        Icons.Filled.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            } else null,
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                                selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("romantic_substyle_${subStyle.title}")
-                        )
+                            }
+                        }
                     }
                 }
 
