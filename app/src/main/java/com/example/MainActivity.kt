@@ -418,12 +418,9 @@ fun MairaAppContent(
                     onBack = { currentScreen = "settings" }
                 )
 
-                "about" -> {
-                    SettingsScreen(onNavigateToSubPage = { page -> currentScreen = page })
-                    AboutScreen(
-                        onBack = { currentScreen = "settings" }
-                    )
-                }
+                "about" -> AboutScreen(
+                    onBack = { currentScreen = "settings" }
+                )
             }
         }
     }
