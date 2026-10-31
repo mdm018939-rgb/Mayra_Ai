@@ -26,6 +26,8 @@ import com.example.data.MairaLogger
 import com.example.personality.PersonalityPrompts
 import com.example.tools.DeviceToolExecutor
 import kotlinx.coroutines.*
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -97,6 +99,50 @@ class MairaVoiceService : Service() {
         return words.size in 1..3 && words.any { it in explicitStopCommands }
     }
 
+    private var personalityCollectorJob: Job? = null
+
+    @OptIn(FlowPreview::class)
+    private fun observePersonalityChanges() {
+        personalityCollectorJob?.cancel()
+        personalityCollectorJob = serviceScope.launch {
+            var currentPersonality = prefsManager.getPersonality()
+            prefsManager.personalityFlow
+                .debounce(1000L)
+                .collect { newPersonality ->
+                    if (!isSessionActive()) {
+                        currentPersonality = newPersonality
+                        return@collect
+                    }
+
+                    if (newPersonality == currentPersonality) return@collect
+
+                    MairaLogger.log(
+                        MairaLogger.Category.UI,
+                        MairaLogger.Level.INFO,
+                        "চলমান ভয়েস সেসনে পারসোনালিটি পরিবর্তন সনাক্ত: $newPersonality"
+                    )
+
+                    // Wait if Maira is currently speaking or processing audio/tools
+                    while (isSessionActive() && (isPlaying || audioQueue.isNotEmpty() || _statusMessage.value == "বলছি..." || _statusMessage.value == "ভাবছি...")) {
+                        delay(300L)
+                    }
+
+                    if (isSessionActive()) {
+                        currentPersonality = newPersonality
+                        val geminiKey = prefsManager.getGeminiKeys().firstOrNull() ?: prefsManager.getGeminiKey()
+                        if (geminiKey.isNotBlank()) {
+                            MairaLogger.log(
+                                MairaLogger.Category.CONNECTION,
+                                MairaLogger.Level.INFO,
+                                "নতুন পারসোনালিটি নিয়ে অটো-রিকানেক্ট করা হচ্ছে..."
+                            )
+                            connectLiveClient(geminiKey)
+                        }
+                    }
+                }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         prefsManager = EncryptedPreferencesManager(this)
@@ -105,6 +151,8 @@ class MairaVoiceService : Service() {
 
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Maira:VoiceWakeLock")
+
+        observePersonalityChanges()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

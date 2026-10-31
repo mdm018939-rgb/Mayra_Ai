@@ -274,7 +274,8 @@ class EncryptedPreferencesManager(context: Context) {
     private val validPersonalityStyles = listOf(
         "রোমান্টিক সঙ্গী (ভালো প্রেমিকা)",
         "রোমান্টিক সঙ্গী (সন্দেহবাজ প্রেমিকা)",
-        "রোমান্টিক সঙ্গী (রাগী প্রেমিকা)"
+        "রোমান্টিক সঙ্গী (রাগী প্রেমিকা)",
+        "রোমান্টিক সঙ্গী (ফ্লার্টি প্রেমিকা)"
     )
 
     private val _personalityFlow = MutableStateFlow(getPersonality())
