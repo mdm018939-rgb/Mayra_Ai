@@ -11,11 +11,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.EncryptedPreferencesManager
 import com.example.service.MairaVoiceService
 import com.example.ui.components.MairaResultDialog
+
+private const val MAX_NICKNAME_LENGTH = 30
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,10 +66,29 @@ fun NicknameScreen(
 
         OutlinedTextField(
             value = nicknameInput,
-            onValueChange = { nicknameInput = it },
+            onValueChange = { input ->
+                if (input.length <= MAX_NICKNAME_LENGTH) {
+                    nicknameInput = input
+                } else {
+                    nicknameInput = input.take(MAX_NICKNAME_LENGTH)
+                }
+            },
             label = { Text("আপনার ডাকনাম") },
             placeholder = { Text("যেমন: রাহুল / তানভীর / অপু") },
-            modifier = Modifier.fillMaxWidth().testTag("nickname_input"),
+            supportingText = {
+                Text(
+                    text = "${nicknameInput.length}/$MAX_NICKNAME_LENGTH",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("nickname_counter"),
+                    textAlign = TextAlign.End,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (nicknameInput.length >= MAX_NICKNAME_LENGTH) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("nickname_input"),
             shape = RoundedCornerShape(16.dp),
             singleLine = true
         )
@@ -85,7 +107,9 @@ fun NicknameScreen(
                     dialogData = Pair("সফল", "ডাকনাম সফলভাবে সংরক্ষণ করা হয়েছে ✓")
                 }
             },
-            modifier = Modifier.fillMaxWidth().height(50.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
             shape = RoundedCornerShape(25.dp)
         ) {
             Text("সংরক্ষণ করো")
@@ -101,3 +125,4 @@ fun NicknameScreen(
         }
     }
 }
+
