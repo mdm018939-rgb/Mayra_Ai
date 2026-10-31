@@ -7,7 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -16,8 +15,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.testTag
@@ -114,16 +111,6 @@ fun VoiceOrb(
         label = "orbit_rotation"
     )
 
-    val swirlRotation by infiniteTransition.animateFloat(
-        initialValue = 360f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween((orbitDuration * 1.4f).toInt(), easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "swirl_rotation"
-    )
-
     val idlePulse by infiniteTransition.animateFloat(
         initialValue = 0.94f,
         targetValue = 1.06f,
@@ -151,13 +138,6 @@ fun VoiceOrb(
             dampingRatio = Spring.DampingRatioMediumBouncy
         ),
         label = "animated_scale"
-    )
-
-    // Icon animation for SUCCESS / ERROR overlay
-    val iconAlpha by animateFloatAsState(
-        targetValue = if (orbState == OrbState.SUCCESS || orbState == OrbState.ERROR) 1f else 0f,
-        animationSpec = tween(300),
-        label = "icon_alpha"
     )
 
     Box(
@@ -254,126 +234,23 @@ fun VoiceOrb(
                 )
             }
 
-            // 4. 3D Glass Sphere Core
-            val highlightOffset = Offset(centerPt.x - baseRadius * 0.3f, centerPt.y - baseRadius * 0.3f)
+            // 4. Pure Smooth 3D Volumetric Glass Sphere Core (No internal lines or marks)
+            val highlightOffset = Offset(centerPt.x - baseRadius * 0.28f, centerPt.y - baseRadius * 0.28f)
 
-            // Deep Base Sphere
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.95f),
+                        Color.White.copy(alpha = 0.85f),
                         primaryColor,
                         secondaryColor,
                         baseColor
                     ),
                     center = highlightOffset,
-                    radius = baseRadius * 1.3f
+                    radius = baseRadius * 1.35f
                 ),
                 center = centerPt,
                 radius = baseRadius
             )
-
-            // 5. Internal Swirling Light Waves inside Glass Sphere
-            rotate(degrees = swirlRotation, pivot = centerPt) {
-                val swirlPath = Path().apply {
-                    moveTo(centerPt.x - baseRadius * 0.7f, centerPt.y)
-                    cubicTo(
-                        centerPt.x - baseRadius * 0.3f, centerPt.y - baseRadius * 0.8f,
-                        centerPt.x + baseRadius * 0.3f, centerPt.y + baseRadius * 0.8f,
-                        centerPt.x + baseRadius * 0.7f, centerPt.y
-                    )
-                }
-
-                drawPath(
-                    path = swirlPath,
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.7f),
-                            primaryColor.copy(alpha = 0.8f),
-                            secondaryColor.copy(alpha = 0.4f)
-                        )
-                    ),
-                    style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round)
-                )
-
-                // Secondary inner energy arc
-                val swirlPath2 = Path().apply {
-                    moveTo(centerPt.x, centerPt.y - baseRadius * 0.6f)
-                    cubicTo(
-                        centerPt.x + baseRadius * 0.7f, centerPt.y - baseRadius * 0.2f,
-                        centerPt.x - baseRadius * 0.7f, centerPt.y + baseRadius * 0.2f,
-                        centerPt.x, centerPt.y + baseRadius * 0.6f
-                    )
-                }
-
-                drawPath(
-                    path = swirlPath2,
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            secondaryColor.copy(alpha = 0.75f),
-                            Color.White.copy(alpha = 0.6f),
-                            primaryColor.copy(alpha = 0.3f)
-                        )
-                    ),
-                    style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
-                )
-            }
-
-            // 6. 3D Glass Crescent Specular Highlight (Lens Reflection)
-            val glassShineRect = Size(baseRadius * 1.4f, baseRadius * 0.7f)
-            val glassShineOffset = Offset(centerPt.x - baseRadius * 0.7f, centerPt.y - baseRadius * 0.85f)
-            drawArc(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.85f),
-                        Color.White.copy(alpha = 0.05f)
-                    )
-                ),
-                startAngle = 190f,
-                sweepAngle = 160f,
-                useCenter = false,
-                topLeft = glassShineOffset,
-                size = glassShineRect,
-                style = Stroke(width = 3.5.dp.toPx(), cap = StrokeCap.Round)
-            )
-
-            // 7. Overlay Check / Warning Icon on Success or Error
-            if (iconAlpha > 0.01f) {
-                val iconRadius = baseRadius * 0.45f
-                drawCircle(
-                    color = Color.Black.copy(alpha = 0.3f * iconAlpha),
-                    center = centerPt,
-                    radius = iconRadius
-                )
-
-                if (orbState == OrbState.SUCCESS) {
-                    // Draw Checkmark Path
-                    val checkPath = Path().apply {
-                        moveTo(centerPt.x - iconRadius * 0.4f, centerPt.y)
-                        lineTo(centerPt.x - iconRadius * 0.1f, centerPt.y + iconRadius * 0.35f)
-                        lineTo(centerPt.x + iconRadius * 0.45f, centerPt.y - iconRadius * 0.3f)
-                    }
-                    drawPath(
-                        path = checkPath,
-                        color = Color.White.copy(alpha = iconAlpha),
-                        style = Stroke(width = 4.5.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                } else if (orbState == OrbState.ERROR) {
-                    // Draw Exclamation Warning Icon
-                    drawLine(
-                        color = Color.White.copy(alpha = iconAlpha),
-                        start = Offset(centerPt.x, centerPt.y - iconRadius * 0.4f),
-                        end = Offset(centerPt.x, centerPt.y + iconRadius * 0.1f),
-                        strokeWidth = 4.5.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
-                    drawCircle(
-                        color = Color.White.copy(alpha = iconAlpha),
-                        center = Offset(centerPt.x, centerPt.y + iconRadius * 0.35f),
-                        radius = 2.5.dp.toPx()
-                    )
-                }
-            }
         }
     }
 }
