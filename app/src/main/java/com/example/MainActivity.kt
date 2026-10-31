@@ -139,6 +139,7 @@ fun MairaAppContent(
     val statusMessage by MairaVoiceService.statusMessage.collectAsState()
     val micRms by MairaVoiceService.micRmsFlow.collectAsState()
     val speakerRms by MairaVoiceService.speakerRmsFlow.collectAsState()
+    val lastActionResult by MairaVoiceService.lastActionResult.collectAsState()
 
     val isSessionActive = MairaVoiceService.isSessionActive()
 
@@ -315,7 +316,9 @@ fun MairaAppContent(
                     speakerRms = speakerRms,
                     userNickname = userNickname,
                     isSessionActive = isSessionActive,
+                    lastActionResult = lastActionResult,
                     onNavigateToConnections = { currentScreen = "connections" },
+                    onMicClick = { handleMicButtonClick() },
                     hasKeys = hasKeys
                 )
 

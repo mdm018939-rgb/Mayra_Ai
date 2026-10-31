@@ -59,6 +59,13 @@ class MairaVoiceService : Service() {
         private val _lastOutputTranscription = MutableStateFlow("")
         val lastOutputTranscription: StateFlow<String> = _lastOutputTranscription.asStateFlow()
 
+        private val _lastActionResult = MutableStateFlow<Pair<String, Long>?>(null)
+        val lastActionResult: StateFlow<Pair<String, Long>?> = _lastActionResult.asStateFlow()
+
+        fun setActionResult(status: String) {
+            _lastActionResult.value = Pair(status, System.currentTimeMillis())
+        }
+
         fun isSessionActive(): Boolean = _sessionState.value == "সংযুক্ত" || _sessionState.value == "সংযুক্ত হচ্ছে..."
     }
 
@@ -402,6 +409,12 @@ class MairaVoiceService : Service() {
         } catch (e: Exception) {
             resultObj.put("status", DeviceToolExecutor.ToolStatus.FAILED.name)
             resultObj.put("message", "টুল পরিচালনায় সমস্যা হয়েছে: ${e.message}")
+        }
+        val statusName = resultObj.optString("status", "")
+        if (statusName == DeviceToolExecutor.ToolStatus.SUCCESS.name) {
+            setActionResult("SUCCESS")
+        } else if (statusName == DeviceToolExecutor.ToolStatus.FAILED.name || statusName == DeviceToolExecutor.ToolStatus.UNAVAILABLE.name) {
+            setActionResult("ERROR")
         }
         return resultObj
     }
