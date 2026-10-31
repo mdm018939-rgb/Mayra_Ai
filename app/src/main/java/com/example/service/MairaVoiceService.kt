@@ -215,27 +215,82 @@ class MairaVoiceService : Service() {
         }
     }
 
+    private var singleKeyReconnectCount = 0
+    private var thinkingWatchdogJob: Job? = null
+
     private fun tryNextKeyAndReconnect(triggerReason: String) {
         val keys = prefsManager.getGeminiKeys()
-        if (keys.size <= 1) return
-        if (voiceGeminiAttempts >= keys.size) {
-            MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.ERROR, "সকল Gemini Live Key চেষ্টা করা হয়েছে, কোনোটি কাজ করছে না")
+        val currentKey = prefsManager.getGeminiKey()
+
+        if (keys.size > 1) {
+            if (voiceGeminiAttempts >= keys.size) {
+                MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.ERROR, "সকল Gemini Live Key চেষ্টা করা হয়েছে, কোনোটি কাজ করছে না")
+                _statusMessage.value = "সংযোগ বিচ্ছিন্ন হয়েছে, আবার চেষ্টা করুন"
+                voiceGeminiAttempts = 0
+                return
+            }
+            voiceGeminiAttempts++
+            val nextKey = prefsManager.getNextGeminiKey()
+            val last4 = if (nextKey.length >= 4) nextKey.takeLast(4) else "XXXX"
+            MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.WARN, "Gemini Live কী সমস্যা ($triggerReason)। পরবর্তী কী দিয়ে পুনঃচেষ্টা করা হচ্ছে (...$last4)...")
+            _statusMessage.value = "পরবর্তী Gemini key চেষ্টা করা হচ্ছে..."
+
+            serviceScope.launch {
+                delay(2000L)
+                connectLiveClient(nextKey)
+            }
+        } else {
+            // Single key mode
+            if (singleKeyReconnectCount >= 3) {
+                MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.ERROR, "একই Key দিয়ে ৩ বার পুনঃসংযোগের চেষ্টা ফেইল করেছে")
+                _statusMessage.value = "সংযোগ বিচ্ছিন্ন হয়েছে, আবার চেষ্টা করুন"
+                singleKeyReconnectCount = 0
+                return
+            }
+            singleKeyReconnectCount++
+            val delayMs = (1000L + singleKeyReconnectCount * 1000L).coerceIn(2000L, 4000L)
+            MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.WARN, "Gemini Live পুনঃসংযোগ চেষ্টা ($singleKeyReconnectCount/3) ($triggerReason)...")
+            _statusMessage.value = "পুনঃসংযোগ করা হচ্ছে ($singleKeyReconnectCount/3)..."
+
+            serviceScope.launch {
+                delay(delayMs)
+                if (currentKey.isNotBlank()) {
+                    connectLiveClient(currentKey)
+                } else {
+                    _statusMessage.value = "সংযোগ বিচ্ছিন্ন হয়েছে, আবার চেষ্টা করুন"
+                }
+            }
+        }
+    }
+
+    private fun reconnectSameKey(triggerReason: String) {
+        val currentKey = prefsManager.getGeminiKey()
+        if (singleKeyReconnectCount >= 3) {
+            MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.ERROR, "সার্ভার এররে ৩ বার পুনঃসংযোগের চেষ্টা ফেইল করেছে")
+            _statusMessage.value = "সংযোগ বিচ্ছিন্ন হয়েছে, আবার চেষ্টা করুন"
+            singleKeyReconnectCount = 0
             return
         }
-        voiceGeminiAttempts++
-        val nextKey = prefsManager.getNextGeminiKey()
-        val last4 = if (nextKey.length >= 4) nextKey.takeLast(4) else "XXXX"
-        MairaLogger.log(MairaLogger.Category.API_KEY, MairaLogger.Level.WARN, "Gemini Live কী সমস্যা ($triggerReason)। পরবর্তী কী দিয়ে পুনঃচেষ্টা করা হচ্ছে (...$last4)...")
-        _statusMessage.value = "পরবর্তী Gemini key চেষ্টা করা হচ্ছে..."
+        singleKeyReconnectCount++
+        val delayMs = (1000L + singleKeyReconnectCount * 1000L).coerceIn(2000L, 4000L)
+        MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.WARN, "সার্ভার এরর/ক্লোজ পুনঃসংযোগ ($singleKeyReconnectCount/3) ($triggerReason)...")
+        _statusMessage.value = "পুনঃসংযোগ করা হচ্ছে ($singleKeyReconnectCount/3)..."
 
         serviceScope.launch {
-            delay(1000)
-            connectLiveClient(nextKey)
+            delay(delayMs)
+            if (currentKey.isNotBlank()) {
+                connectLiveClient(currentKey)
+            } else {
+                _statusMessage.value = "সংযোগ বিচ্ছিন্ন হয়েছে, আবার চেষ্টা করুন"
+            }
         }
     }
 
     private fun createLiveListener() = object : GeminiLiveWebSocketClient.LiveEventListener {
         override fun onSetupComplete() {
+            thinkingWatchdogJob?.cancel()
+            voiceGeminiAttempts = 0
+            singleKeyReconnectCount = 0
             _sessionState.value = "সংযুক্ত"
             _statusMessage.value = "শুনছি..."
             isServerTurnComplete = false
@@ -243,6 +298,7 @@ class MairaVoiceService : Service() {
         }
 
         override fun onAudioDataReceived(pcm24kBytes: ByteArray) {
+            thinkingWatchdogJob?.cancel()
             isServerTurnComplete = false
             _statusMessage.value = "বলছি..."
             enqueueAudioPlayback(pcm24kBytes)
@@ -266,14 +322,14 @@ class MairaVoiceService : Service() {
         }
 
         override fun onInterrupted() {
+            thinkingWatchdogJob?.cancel()
             MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.INFO, "Gemini Live Interrupted event গ্রহণ করা হয়েছে (বর্তমান বাফার সমাপ্ত হবে)")
-            // Do not discard already queued audio chunks; allow received speech to finish naturally
             isServerTurnComplete = true
         }
 
         override fun onTurnComplete() {
+            thinkingWatchdogJob?.cancel()
             isServerTurnComplete = true
-            // If audioQueue is already empty (e.g. text/tool response with no audio), switch to listening immediately
             if (audioQueue.isEmpty()) {
                 _statusMessage.value = "শুনছি..."
             }
@@ -281,9 +337,38 @@ class MairaVoiceService : Service() {
 
         override fun onToolCall(id: String, name: String, args: JSONObject) {
             _statusMessage.value = "ভাবছি..."
+            thinkingWatchdogJob?.cancel()
+
             serviceScope.launch(Dispatchers.IO) {
-                val responseObj = executeToolCallInternal(name, args)
+                val responseObj = try {
+                    withTimeout(8000L) {
+                        executeToolCallInternal(name, args)
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    MairaLogger.log(MairaLogger.Category.TOOL, MairaLogger.Level.ERROR, "টুল কল টাইমআউট (8 সে.): $name")
+                    JSONObject().apply {
+                        put("status", DeviceToolExecutor.ToolStatus.UNKNOWN.name)
+                        put("message", "টুল পরিচালনায় সময় পার হয়ে গেছে।")
+                    }
+                } catch (e: Exception) {
+                    MairaLogger.log(MairaLogger.Category.TOOL, MairaLogger.Level.ERROR, "টুল কলের ত্রুটি: ${e.message}")
+                    JSONObject().apply {
+                        put("status", DeviceToolExecutor.ToolStatus.FAILED.name)
+                        put("message", "টুল পরিচালনায় সমস্যা হয়েছে: ${e.message}")
+                    }
+                }
+
                 liveClient?.sendToolResponse(id, name, responseObj)
+
+                // Start 10-second watchdog after sending tool response
+                thinkingWatchdogJob?.cancel()
+                thinkingWatchdogJob = serviceScope.launch {
+                    delay(10000L)
+                    if (_statusMessage.value == "ভাবছি...") {
+                        _statusMessage.value = "শুনছি..."
+                        MairaLogger.log(MairaLogger.Category.TOOL, MairaLogger.Level.WARN, "'ভাবছি...' ওয়াচডগ টাইমআউট (১০ সে.), 'শুনছি...' স্টেটে ফিরে যাওয়া হয়েছে")
+                    }
+                }
             }
         }
 
@@ -296,16 +381,29 @@ class MairaVoiceService : Service() {
                     errorMessage.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ||
                     errorMessage.contains("API_KEY_INVALID", ignoreCase = true) ||
                     errorMessage.contains("API key not valid", ignoreCase = true)
+            val isServerError = errorMessage.contains("503") ||
+                    errorMessage.contains("1011") ||
+                    errorMessage.contains("500")
+
             if (isQuotaOrAuth) {
                 tryNextKeyAndReconnect(errorMessage)
+            } else if (isServerError) {
+                reconnectSameKey(errorMessage)
             }
         }
 
         override fun onClosed(code: Int, reason: String) {
             if (_sessionState.value != "বন্ধ") {
                 _statusMessage.value = "সংযোগ বিচ্ছিন্ন ($code)"
-                if (code == 4003 || code == 4001 || code == 4429 || reason.contains("quota", ignoreCase = true) || reason.contains("exhausted", ignoreCase = true)) {
+                val isQuotaOrAuth = code == 4003 || code == 4001 || code == 4429 ||
+                        reason.contains("quota", ignoreCase = true) ||
+                        reason.contains("exhausted", ignoreCase = true)
+                val isServerErrorOrNormalClose = code == 503 || code == 1011 || code == 1006 || code == 1000 || reason.contains("goAway", ignoreCase = true)
+
+                if (isQuotaOrAuth) {
                     tryNextKeyAndReconnect("Closed code=$code reason=$reason")
+                } else if (isServerErrorOrNormalClose) {
+                    reconnectSameKey("Closed code=$code reason=$reason")
                 }
             }
         }
@@ -631,9 +729,11 @@ class MairaVoiceService : Service() {
         isPlaying = true
 
         playbackThread = Thread {
+            var emptyQueueStartTime = 0L
             while (isPlaying && !Thread.currentThread().isInterrupted) {
                 val chunk = audioQueue.poll()
                 if (chunk != null) {
+                    emptyQueueStartTime = 0L
                     calculateSpeakerRms(chunk)
                     audioTrack?.write(chunk, 0, chunk.size)
                 } else {
@@ -642,7 +742,20 @@ class MairaVoiceService : Service() {
                     if (isServerTurnComplete && _statusMessage.value == "বলছি...") {
                         _statusMessage.value = "শুনছি..."
                         isServerTurnComplete = false
+                        emptyQueueStartTime = 0L
                         MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.INFO, "মাইরা উত্তর বলা সম্পন্ন করেছে, শুনছি...")
+                    } else if (_statusMessage.value == "বলছি...") {
+                        // Watchdog: If audioQueue is empty and state is "বলছি...", check 2s threshold
+                        if (emptyQueueStartTime == 0L) {
+                            emptyQueueStartTime = System.currentTimeMillis()
+                        } else if (System.currentTimeMillis() - emptyQueueStartTime >= 2000L) {
+                            _statusMessage.value = "শুনছি..."
+                            isServerTurnComplete = false
+                            emptyQueueStartTime = 0L
+                            MairaLogger.log(MairaLogger.Category.AUDIO, MairaLogger.Level.WARN, "'বলছি...' ওয়াচডগ টাইমআউট (২ সে.), 'শুনছি...' স্টেটে ফিরে যাওয়া হয়েছে")
+                        }
+                    } else {
+                        emptyQueueStartTime = 0L
                     }
                     try { Thread.sleep(20) } catch (e: InterruptedException) { break }
                 }

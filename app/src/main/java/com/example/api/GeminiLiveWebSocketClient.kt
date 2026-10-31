@@ -58,6 +58,7 @@ class GeminiLiveWebSocketClient(
         val okHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.SECONDS)
+            .pingInterval(15, TimeUnit.SECONDS)
             .build()
 
         val request = Request.Builder().url(url).build()
@@ -120,7 +121,7 @@ class GeminiLiveWebSocketClient(
                 MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.WARN, "WebSocket বন্ধ হয়েছে (code=$code, reason=$reason)")
                 listener.onClosed(code, reason)
 
-                if (!isClosedIntentionally && code != 1000) {
+                if (!isClosedIntentionally) {
                     attemptAutoReconnect()
                 }
             }
@@ -259,6 +260,13 @@ class GeminiLiveWebSocketClient(
             }
 
             // 4. Check error / goAway
+            if (root.has("goAway") || root.has("go_away")) {
+                MairaLogger.log(MairaLogger.Category.CONNECTION, MairaLogger.Level.WARN, "Server sent goAway notice")
+                if (!isClosedIntentionally) {
+                    listener.onClosed(1000, "Server goAway notice")
+                }
+            }
+
             val errorObj = root.optJSONObject("error")
             if (errorObj != null) {
                 val message = errorObj.optString("message", "অজানা সার্ভার সমস্যা")
