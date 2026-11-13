@@ -18,11 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.api.GeminiImageClient
 import com.example.api.GroqChatClient
 import com.example.data.EncryptedPreferencesManager
@@ -32,7 +27,6 @@ import com.example.data.ThemeLoadingManager
 import com.example.data.db.AppDatabase
 import com.example.data.db.ChatMessageEntity
 import com.example.personality.PersonalityPrompts
-import com.example.security.AppLockViewModel
 import com.example.service.MairaOverlayService
 import com.example.service.MairaVoiceService
 import com.example.tools.DeviceToolExecutor
@@ -66,43 +60,19 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by prefsManager.themeModeFlow.collectAsState()
-            val appLockViewModel: AppLockViewModel = viewModel()
-            val lockState by appLockViewModel.uiState.collectAsStateWithLifecycle()
-            val lifecycleOwner = LocalLifecycleOwner.current
-
-            DisposableEffect(lifecycleOwner) {
-                val observer = LifecycleEventObserver { _, event ->
-                    if (event == Lifecycle.Event.ON_START) {
-                        appLockViewModel.onAppForegrounded()
-                    }
-                }
-                lifecycleOwner.lifecycle.addObserver(observer)
-                onDispose {
-                    lifecycleOwner.lifecycle.removeObserver(observer)
-                }
-            }
 
             MairaTheme(themeMode = themeMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    if (!lockState.isUnlocked) {
-                        PasswordLockScreen(
-                            uiState = lockState,
-                            onUnlockSubmit = { appLockViewModel.submitPassword(it) },
-                            onRetryFetch = { appLockViewModel.refreshRemoteConfig() },
-                            onInputChanged = { appLockViewModel.clearTransientError() }
-                        )
-                    } else {
-                        MairaAppContent(
-                            prefsManager = prefsManager,
-                            database = database,
-                            toolExecutor = toolExecutor,
-                            onStartVoiceService = { startVoiceService() },
-                            onStopVoiceService = { stopVoiceService() }
-                        )
-                    }
+                    MairaAppContent(
+                        prefsManager = prefsManager,
+                        database = database,
+                        toolExecutor = toolExecutor,
+                        onStartVoiceService = { startVoiceService() },
+                        onStopVoiceService = { stopVoiceService() }
+                    )
                 }
             }
         }
