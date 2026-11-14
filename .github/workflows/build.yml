@@ -1,25 +1,28 @@
-name: Build APK
+name: Build & Release APK
 
 on:
   push:
     branches: [ "main" ]
+    tags:
+      - "v*"
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
-  build:
+  build-debug:
+    if: "!startsWith(github.ref, 'refs/tags/')"
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -49,3 +52,73 @@ jobs:
           name: Maira-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+  release:
+    if: "startsWith(github.ref, 'refs/tags/v')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Make gradlew executable
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+          fi
+
+      - name: Build Signed Release APK
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'maira_release_2026' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'maira_release_2026' }}
+        run: |
+          if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+            cp .env.example .env
+          fi
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleRelease --stacktrace
+          else
+            gradle assembleRelease --stacktrace
+          fi
+
+      - name: Prepare Release APK Filename
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          SRC_APK="app/build/outputs/apk/release/app-release.apk"
+          DEST_APK="app/build/outputs/apk/release/Maira-${TAG_NAME}.apk"
+          if [ ! -f "$SRC_APK" ]; then
+            echo "Error: $SRC_APK not found!"
+            exit 1
+          fi
+          cp "$SRC_APK" "$DEST_APK"
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Maira-${{ github.ref_name }}-apk
+          path: app/build/outputs/apk/release/Maira-${{ github.ref_name }}.apk
+          if-no-files-found: error
+
+      - name: Create GitHub Release & Attach APK
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Maira ${{ github.ref_name }}
+          generate_release_notes: true
+          files: app/build/outputs/apk/release/Maira-${{ github.ref_name }}.apk
