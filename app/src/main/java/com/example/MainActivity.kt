@@ -30,11 +30,14 @@ import com.example.personality.PersonalityPrompts
 import com.example.service.MairaOverlayService
 import com.example.service.MairaVoiceService
 import com.example.tools.DeviceToolExecutor
+import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.MairaBottomBar
 import com.example.ui.components.MairaCrashDialog
 import com.example.ui.components.MairaResultDialog
 import com.example.ui.screens.*
 import com.example.ui.theme.MairaTheme
+import com.example.updater.AppUpdateChecker
+import com.example.updater.AppUpdateInfo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -271,6 +274,24 @@ fun MairaAppContent(
     val isConnected by networkObserver.isConnectedState.collectAsState()
 
     var wasVoiceSessionActiveBeforeDisconnect by remember { mutableStateOf(false) }
+
+    // GitHub release update check (silent on offline or error)
+    var availableUpdate by remember { mutableStateOf<AppUpdateInfo?>(null) }
+    var hasCheckedUpdate by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isConnected) {
+        if (isConnected && !hasCheckedUpdate) {
+            hasCheckedUpdate = true
+            availableUpdate = AppUpdateChecker.checkForUpdate(BuildConfig.VERSION_NAME)
+        }
+    }
+
+    availableUpdate?.let { updateInfo ->
+        AppUpdateDialog(
+            updateInfo = updateInfo,
+            onDismiss = { availableUpdate = null }
+        )
+    }
 
     // Handle session teardown and automatic reconnect during internet drops
     LaunchedEffect(isConnected) {

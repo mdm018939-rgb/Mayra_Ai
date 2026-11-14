@@ -17,6 +17,8 @@ android {
     applicationId = "com.aistudio.maira.bengaliai"
     minSdk = 24
     targetSdk = 36
+
+    // App version — update these two values for new releases
     versionCode = 1
     versionName = "1.0"
 
