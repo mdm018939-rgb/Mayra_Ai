@@ -19,8 +19,8 @@ android {
     targetSdk = 36
 
     // App version — update these two values for new releases
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 2
+    versionName = "1.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
